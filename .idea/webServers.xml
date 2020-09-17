@@ -3,7 +3,7 @@
   <component name="WebServers">
     <option name="servers">
       <webServer id="db044fa1-f4f7-4af7-a3b7-7487e54fca06" name="pilite">
-        <fileTransfer rootFolder="/home/pi" accessType="SFTP" host="192.168.0.101" port="22" sshConfigId="e893d8ec-438d-4523-8abb-a9750802cc65" sshConfig="pi@192.168.0.101:22 password">
+        <fileTransfer rootFolder="/home/pi" accessType="SFTP" host="192.168.1.83" port="22" sshConfigId="e893d8ec-438d-4523-8abb-a9750802cc65" sshConfig="pi@192.168.1.83:22 password">
           <advancedOptions>
             <advancedOptions dataProtectionLevel="Private" passiveMode="true" shareSSLContext="true" />
           </advancedOptions>

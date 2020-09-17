@@ -72,13 +72,13 @@ async def process_queue(q: queue.Queue, aioserial_instance: aioserial.AioSerial)
     with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
         while True:
             line: bytes = await asyncio.get_running_loop().run_in_executor(executor, q.get)
+            q.task_done()
             s = monotonic()
-            number_of_byte: int = await aioserial_instance.writelines_async(line)
+            number_of_byte: int = await aioserial_instance.write_async(line)
             # print(monotonic()-s)
             line_str = line.decode(errors='ignore')
             # if line_str[:6] == "$GPGGA": rint("**** found it ****")
             print(line_str, end='', flush=True)
-            q.task_done()
             # print(monotonic() - s)
 
 
@@ -87,16 +87,16 @@ async def read_and_print(aioserial_instance: aioserial.AioSerial):
 
 if __name__ == "__main__":
     blue_next_dongle = NMEA_2000_conv = combined = compass = ais = None
-    blue_next_dongle: aioserial.AioSerial = aioserial.AioSerial(port='/dev/ttyUSB0', baudrate=9600)
+    # blue_next_dongle: aioserial.AioSerial = aioserial.AioSerial(port='/dev/ttyUSB0', baudrate=9600)
     NMEA_2000_conv: aioserial.AioSerial = aioserial.AioSerial(port='/dev/ttyUSB1', baudrate=38400)
-    # combined: aioserial.AioSerial = aioserial.AioSerial(port='/dev/ttyUSB2', baudrate=4800)
-    # compass: aioserial.AioSerial = aioserial.AioSerial(port='/dev/ttyUSB3', baudrate=4800)
-    # ais: aioserial.AioSerial = aioserial.AioSerial(port='/dev/ttyUSB3', baudrate=38400)
+    combined: aioserial.AioSerial = aioserial.AioSerial(port='/dev/ttyUSB2', baudrate=4800)
+    compass: aioserial.AioSerial = aioserial.AioSerial(port='/dev/ttyUSB0', baudrate=4800)
+    ais: aioserial.AioSerial = aioserial.AioSerial(port='/dev/ttyUSB3', baudrate=38400)
 
     q: queue.Queue = queue.Queue()
     run_list = [
         process_queue(q, NMEA_2000_conv),
-        main()
+        # main()
     ]
 
     if blue_next_dongle:
@@ -107,5 +107,6 @@ if __name__ == "__main__":
         run_list.append(readline_and_put_to_queue(compass, q))
     if ais:
         run_list.append(readline_and_put_to_queue(ais, q))
+    # run_list.append(readline_and_put_to_queue(NMEA_2000_conv, q))
 
     asyncio.run(asyncio.wait(run_list))
