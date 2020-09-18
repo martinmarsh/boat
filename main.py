@@ -1,8 +1,7 @@
 #!/usr/bin/env python3.7
 import asyncio
 import aioserial
-import concurrent.futures
-import queue
+import pyudev
 from time import monotonic
 from app.boat_io import BoatModel
 
@@ -24,7 +23,7 @@ def relative_direction(diff):
     return diff
 
 
-async def main():
+async def autohelm():
     b = BoatModel()
     items = {}
     c = 0
@@ -63,50 +62,78 @@ async def main():
         last_heading = heading
 
 
-async def readline_and_put_to_queue(aioserial_instance: aioserial.AioSerial, q: queue.Queue):
+async def readline_and_put_to_queue(aioserial_instance: aioserial.AioSerial, q: asyncio.Queue):
     while True:
-        q.put(await aioserial_instance.readline_async())
+        line = await aioserial_instance.readline_async()
+        await q.put(line)
 
 
-async def process_queue(q: queue.Queue, aioserial_instance: aioserial.AioSerial):
-    with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
-        while True:
-            line: bytes = await asyncio.get_running_loop().run_in_executor(executor, q.get)
-            q.task_done()
-            s = monotonic()
-            number_of_byte: int = await aioserial_instance.write_async(line)
-            # print(monotonic()-s)
-            line_str = line.decode(errors='ignore')
-            # if line_str[:6] == "$GPGGA": rint("**** found it ****")
-            print(line_str, end='', flush=True)
-            # print(monotonic() - s)
+async def process_queue(q: asyncio.Queue, aioserial_instance: aioserial.AioSerial):
+    while True:
+        line: bytes = await q.get()
+        q.task_done()
+        s = monotonic()
+        number_of_byte: int = await aioserial_instance.write_async(line)
+        # print(monotonic()-s)
+        line_str = line.decode(errors='ignore')
+        # if line_str[:6] == "$GPGGA": print("**** found it ****")
+        print(line_str, end='', flush=True)
+        # print(monotonic() - s)
 
 
-async def read_and_print(aioserial_instance: aioserial.AioSerial):
-    print((await aioserial_instance.read_async()).decode(errors='ignore'), end='', flush=True)
+def create_read_task(attached_devs, name, desc, baud, q,  task_list):
+    serial_device = None
+    if attached_devs.get(name):
+        print(f"Found {desc} at {name} = {attached_devs[name]}")
+        serial_device = aioserial.AioSerial(port=attached_devs[name], baudrate=baud)
+        task_list.append(asyncio.create_task(readline_and_put_to_queue(serial_device, q)))
+    return serial_device
+
+
+async def main():
+    context = pyudev.Context()
+    attached_devs = {}
+
+    for device in context.list_devices(subsystem='tty'):
+        dev_name = device.properties['DEVNAME']
+        if 'USB' in dev_name:
+            if device.properties['ID_VENDOR'] == 'FTDI':
+                num = device.properties.get('ID_USB_INTERFACE_NUM', '00')
+                attached_devs['multi_'+num] = dev_name
+            elif device.properties['ID_VENDOR'] == 'Prolific_Technology_Inc.':
+                attached_devs['usb_serial'] = dev_name
+            elif device.properties['ID_VENDOR'] == 'Silicon_Labs' and device.properties['ID_MODEL_ID'] == 'ea60':
+                attached_devs['gps_dongle'] = dev_name
+    print(attached_devs)
+    # blue_next_dongle: aioserial.AioSerial = aioserial.AioSerial(port='/dev/ttyUSB0', baudrate=9600)
+    # NMEA_2000_conv: aioserial.AioSerial = aioserial.AioSerial(port='/dev/ttyUSB1', baudrate=38400)
+    # combined: aioserial.AioSerial = aioserial.AioSerial(port='/dev/ttyUSB2', baudrate=4800)
+    # compass: aioserial.AioSerial = aioserial.AioSerial(port='/dev/ttyUSB0', baudrate=4800)
+    # ais: aioserial.AioSerial = aioserial.AioSerial(port='/dev/ttyUSB3', baudrate=38400)
+
+    # q: queue.Queue = queue.Queue()
+    q = asyncio.Queue()
+
+    run_list = [
+        asyncio.create_task(autohelm())
+    ]
+    consumers = []
+
+    create_read_task(attached_devs, 'gps_dongle', 'Blue Next GPS Dongle', 9600, q, run_list)
+    create_read_task(attached_devs, 'multi_00', 'Compass', 4800, q, run_list)
+    nmea_2000_conv = create_read_task(attached_devs, 'multi_01', 'NMEA 2000 conv', 38400, q, run_list)
+    create_read_task(attached_devs, 'multi_02', 'Combined Log, Depth and GPS display', 4800, q, run_list)
+    create_read_task(attached_devs, 'multi_03', 'AIS', 38400, q, run_list)
+    create_read_task(attached_devs, 'usb_serial', 'General USB (Prolific)', 38400, q, run_list)
+
+    if nmea_2000_conv:
+        consumers.append(asyncio.create_task(process_queue(q, nmea_2000_conv)))
+
+    await asyncio.gather(*run_list)
+
+    await q.join()  # Implicitly awaits consumers, too
+    for c in consumers:
+        c.cancel()
 
 if __name__ == "__main__":
-    blue_next_dongle = NMEA_2000_conv = combined = compass = ais = None
-    # blue_next_dongle: aioserial.AioSerial = aioserial.AioSerial(port='/dev/ttyUSB0', baudrate=9600)
-    NMEA_2000_conv: aioserial.AioSerial = aioserial.AioSerial(port='/dev/ttyUSB1', baudrate=38400)
-    combined: aioserial.AioSerial = aioserial.AioSerial(port='/dev/ttyUSB2', baudrate=4800)
-    compass: aioserial.AioSerial = aioserial.AioSerial(port='/dev/ttyUSB0', baudrate=4800)
-    ais: aioserial.AioSerial = aioserial.AioSerial(port='/dev/ttyUSB3', baudrate=38400)
-
-    q: queue.Queue = queue.Queue()
-    run_list = [
-        process_queue(q, NMEA_2000_conv),
-        # main()
-    ]
-
-    if blue_next_dongle:
-        run_list.append(readline_and_put_to_queue(blue_next_dongle, q))
-    if combined:
-        run_list.append(readline_and_put_to_queue(combined, q))
-    if compass:
-        run_list.append(readline_and_put_to_queue(compass, q))
-    if ais:
-        run_list.append(readline_and_put_to_queue(ais, q))
-    # run_list.append(readline_and_put_to_queue(NMEA_2000_conv, q))
-
-    asyncio.run(asyncio.wait(run_list))
+    asyncio.run(main())
