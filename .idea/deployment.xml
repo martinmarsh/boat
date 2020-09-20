@@ -1,8 +1,22 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <project version="4">
-  <component name="PublishConfigData" autoUpload="Always" serverName="pilite">
+  <component name="PublishConfigData" autoUpload="Always" serverName="rp-lite1 tplink wireless">
     <serverData>
       <paths name="pilite">
+        <serverdata>
+          <mappings>
+            <mapping deploy="/boat" local="$PROJECT_DIR$" web="/" />
+          </mappings>
+        </serverdata>
+      </paths>
+      <paths name="rp-lite1 tplink wired">
+        <serverdata>
+          <mappings>
+            <mapping deploy="/boat" local="$PROJECT_DIR$" web="/" />
+          </mappings>
+        </serverdata>
+      </paths>
+      <paths name="rp-lite1 tplink wireless">
         <serverdata>
           <mappings>
             <mapping deploy="/boat" local="$PROJECT_DIR$" web="/" />

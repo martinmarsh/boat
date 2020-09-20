@@ -3,8 +3,12 @@ import asyncio
 import aioserial
 import pyudev
 import datetime
+from aiofile import AIOFile
 from time import monotonic
 from app.boat_io import BoatModel
+import json
+import asyncio_dgram
+import arrow
 
 
 def loop(x):
@@ -27,6 +31,12 @@ def relative_direction(diff):
 async def log(boat_data: dict, q: asyncio.Queue):
     while True:
         await asyncio.sleep(10)
+        async with AIOFile("./logs/log.txt", 'a+') as afp:
+            line = "".join([json.dumps(boat_data),",\n"])
+            print(line)
+            await afp.write(line)
+            await afp.fsync()
+
         print(boat_data)
 
 
@@ -76,21 +86,47 @@ def sign_nmea(symbol, types):
         return 0
 
 
+def get_micro_secs(real_str: str) -> int:
+    """
+    If there is a decimal point returns fractional part as an integer
+    based on 10 to minus 6 ie if seconds returns microseconds
+    :param real_str:  A string with optional fraction
+    :return: decimal par as integer based on micro units eg microseconds
+    """
+    try:
+        p1, p2 = real_str.split(".")
+    except ValueError:
+        return 0
+    if p2:
+        p2 = f"{p2:0<6}"
+        return int(p2)
+    return 0
+
+
 def get_nmea_field_value(var_name, value_fields, format_def):
     value = None
     func_map = {
         "hhmmss.ss": lambda value_list: datetime.time(
             hour=int(value_list[0][0:2]), minute=int(value_list[0][2:4]), second=int(value_list[0][4:6]),
-            microsecond=int(value_list[0][7:])*10**(6 - len(value_list[0][7:]))),
+            microsecond=get_micro_secs(value_list[0])).isoformat(),
         "yyyyy.yyyy,a": lambda value_list: ((float(value_list[0][0:3]) + float(value_list[0][3:])/60.0)
                                             * sign_nmea(value_list[1], {'E': 1, 'W': -1})),
         "llll.llll,a": lambda value_list: ((float(value_list[0][0:2]) + float(value_list[0][2:])/60.0)
                                             * sign_nmea(value_list[1], {'N': 1, 'S': -1})),
         "x.x": lambda value_list: float(value_list[0]),
         "ddmmyy": lambda value_list: datetime.date(
-            day=int(value_list[0][0:2]), month=int(value_list[0][2:4]), year=int(value_list[0][4:])+2000),
+            day=int(value_list[0][0:2]), month=int(value_list[0][2:4]), year=int(value_list[0][4:])+2000).isoformat(),
         "A": lambda value_list: value_list[0],
         "x.x,a": lambda value_list: float(value_list[0]) * sign_nmea(value_list[1], {'E': 1, 'W': -1}),
+        "dd,mm,yyyy": lambda value_list: datetime.date(
+            day=int(value_list[0]), month=int(value_list[1]), year=int(value_list[2])).isoformat(),
+        "x": lambda value_list: int(value_list[0]),
+        "hhmmss.ss,dd,dd,yyyy,hrs,mins": lambda value_list:  arrow.Arrow(
+            int(value_list[3]), int(value_list[2]), int(value_list[1]),
+            int(value_list[0][0:2]), int(value_list[0][2:4]), int(value_list[0][4:6]),
+            get_micro_secs(value_list[0]),
+            f"{int(value_list[4]):+}:{value_list[5]:0>2}"
+        ).isoformat()
     }
     func = func_map.get(format_def[1])
     if func:
@@ -116,40 +152,53 @@ def nmea_decoder(sentence: str, data: dict):
         "TMG": (1, "x.x"),
         "date": (1, "ddmmyy"),
         "mag_var": (2, "x.x,a"),
+        "datetime": (6, "hhmmss.ss,dd,dd,yyyy,hrs,mins"),
+        "zda_time": (1, "hhmmss.ss"),
+        "zda_date": (4, "dd,mm,yyyy"),
+        "z_hrs": (1, "x"),
+        "z_mins": (1, "x"),
     }
 
     sentences = {
-        "RMC": ["time", "status", "lat", "long", "SOG", "TMG", "date", "mag_var"]
+        "RMC": ["time", "status", "lat", "long", "SOG", "TMG", "date", "mag_var"],
+        "ZDA": ["datetime"],
+        "APB": []  # ,A,A,0,L,N,V,V,359.6,T,1,359.1,T,,T,A*79
+
     }
-    if len(sentence) > 9:
-        code = sentence[3:6]
-        if code in sentences:
-            fields = sentence[7:].split(",")
-            for var_name in sentences[code]:
-                value_fields = []
-                x = def_vars[var_name][0]
+    code = ""
+    try:
+        if len(sentence) > 9:
+            code = sentence[3:6]
+            if code in sentences:
+                fields = sentence[7:].split(",")
+                for var_name in sentences[code]:
+                    value_fields = []
+                    x = def_vars[var_name][0]
+                    while x > 0 and fields:
+                        value_fields.append(fields.pop(0))
+                        x -= 1
+                    value = get_nmea_field_value(var_name, value_fields, def_vars[var_name])
+                    if value:
+                        data[var_name] = value
+    except (AttributeError, ValueError, ) as err:
+        print(f"NMEA {code} sentence translation error: {err} when processing {sentence}")
 
-                while x > 0 and fields:
-                    value_fields.append(fields.pop(0))
-                    x -= 1
 
-                value = get_nmea_field_value(var_name, value_fields, def_vars[var_name])
-                if value:
-                    data[var_name] = value
-
-
-async def nmea_reader(device_name: str, aioserial_instance: aioserial.AioSerial, boat_data: dict, q: asyncio.Queue):
+async def nmea_reader(device_name: str, aioserial_instance: aioserial.AioSerial, boat_data: dict,
+                      q_serial: asyncio.Queue, q_udp: asyncio.Queue):
     while True:
         line = await aioserial_instance.readline_async()
         line_str = line.decode(errors='ignore')
         nmea_decoder(line_str, boat_data)
-        await q.put(line)
+        await q_serial.put(line)
+        await q_udp.put(line)
 
 
-async def read_to_queue(aioserial_instance: aioserial.AioSerial, q: asyncio.Queue):
+async def read_to_queue(aioserial_instance: aioserial.AioSerial, q_serial: asyncio.Queue, q_udp: asyncio.Queue):
     while True:
         line = await aioserial_instance.readline_async()
-        await q.put(line)
+        await q_serial.put(line)
+        await q_udp.put(line)
 
 
 async def process_queue(q: asyncio.Queue, combined_nmea_out: aioserial.AioSerial):
@@ -161,8 +210,31 @@ async def process_queue(q: asyncio.Queue, combined_nmea_out: aioserial.AioSerial
         # print(monotonic()-s)
         line_str = line.decode(errors='ignore')
         # if line_str[:6] == "$GPGGA": print("**** found it ****")
-        print(line_str, end='', flush=True)
+        # print(line_str, end='', flush=True)
         # print(monotonic() - s)
+
+
+async def process_udp_queue(q: asyncio.Queue, ip: str, port: int):
+    """
+    Processes a queue sending each line to a UDP sever such as OpenCPN
+    set up with ip address 0.0.0.0 and same port. This is fully async
+    non async udp would work with just:
+    sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)  # UDP
+    sock.sendto(line, (ip, port))
+    :param q:
+    :param ip:  Ip of UDP server which receives the message
+    :param port: Port used at both ends gg 8011
+    """
+    while True:
+        try:
+            stream = await asyncio_dgram.connect((ip, port))
+            while True:
+                line: bytes = await q.get()
+                q.task_done()
+                await stream.send(line)
+        except ConnectionError as err:
+            print(f"Failed to connect to OpenCPN error: {err}")
+            await asyncio.sleep(20)
 
 
 def open_serial(attached_devs, port_name, device_name, baud, serial_devices):
@@ -195,9 +267,11 @@ async def main(consumers):
     serial_devices = {}  # opened async serial devices by device name eg compass
     q_other = asyncio.Queue()
     q_gps = asyncio.Queue()
+    q_udp = asyncio.Queue()
     producers = [
-        asyncio.create_task(autohelm(boat_data, q_other)),
+        # asyncio.create_task(autohelm(boat_data, q_other)),
         asyncio.create_task(log(boat_data, q_other)),
+        asyncio.create_task(process_udp_queue(q_udp, "192.168.1.88", 8011)),
     ]   # producers write to queues to pass and multiplex nmea sentences to consumers
 
     open_serial(attached_devs, 'gps_dongle', 'blue_next_gps_dongle', 9600, serial_devices)
@@ -209,11 +283,11 @@ async def main(consumers):
 
     for device_name, serial_obj in serial_devices.items():
         if device_name == 'ais':
-            producers.append(asyncio.create_task(read_to_queue(serial_obj,q_other)))
+            producers.append(asyncio.create_task(read_to_queue(serial_obj, q_other, q_udp)))
         if device_name == 'nmea_2000_bridge':
-            producers.append(asyncio.create_task(nmea_reader(device_name, serial_obj, boat_data, q_gps)))
+            producers.append(asyncio.create_task(nmea_reader(device_name, serial_obj, boat_data, q_gps, q_udp)))
         else:
-            producers.append(asyncio.create_task(nmea_reader(device_name, serial_obj, boat_data, q_other)))
+            producers.append(asyncio.create_task(nmea_reader(device_name, serial_obj, boat_data, q_other, q_udp)))
 
     if serial_devices.get('nmea_2000_bridge'):
         consumers.append(asyncio.create_task(process_queue(q_other, serial_devices['nmea_2000_bridge'])))
