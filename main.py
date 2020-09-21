@@ -103,7 +103,7 @@ def get_micro_secs(real_str: str) -> int:
     return 0
 
 
-def get_nmea_field_value(var_name, value_fields, format_def):
+def get_nmea_field_value(value_fields, format_def):
     value = None
     func_map = {
         "hhmmss.ss": lambda value_list: datetime.time(
@@ -118,15 +118,17 @@ def get_nmea_field_value(var_name, value_fields, format_def):
             day=int(value_list[0][0:2]), month=int(value_list[0][2:4]), year=int(value_list[0][4:])+2000).isoformat(),
         "A": lambda value_list: value_list[0],
         "x.x,a": lambda value_list: float(value_list[0]) * sign_nmea(value_list[1], {'E': 1, 'W': -1}),
-        "dd,mm,yyyy": lambda value_list: datetime.date(
-            day=int(value_list[0]), month=int(value_list[1]), year=int(value_list[2])).isoformat(),
         "x": lambda value_list: int(value_list[0]),
-        "hhmmss.ss,dd,dd,yyyy,hrs,mins": lambda value_list:  arrow.Arrow(
+        "hhmmss.ss,dd,dd,yyyy,tz_h,tz_m": lambda value_list:  arrow.Arrow(
             int(value_list[3]), int(value_list[2]), int(value_list[1]),
             int(value_list[0][0:2]), int(value_list[0][2:4]), int(value_list[0][4:6]),
             get_micro_secs(value_list[0]),
             f"{int(value_list[4]):+}:{value_list[5]:0>2}"
-        ).isoformat()
+        ).isoformat(),
+        "x.x,R": lambda value_list: float(value_list[0]) * sign_nmea(value_list[1], {'R': 1, 'L': -1}),
+        "s": lambda value_list: value_list[0],
+        "x.x,T": lambda value_list: value_list[0],   # To do convert to true  if 2nd field is magnetic ie M
+
     }
     func = func_map.get(format_def[1])
     if func:
@@ -142,27 +144,59 @@ def get_nmea_field_value(var_name, value_fields, format_def):
     return value
 
 
-def nmea_decoder(sentence: str, data: dict):
+def get_sentence_data(sentence: str, var_names: list) -> dict:
+    """
+    Gets a dict of extracted from the NMEA 0183 sentence as defined by var_names
+    :param sentence - received NMEA 0183 sentence or line read
+    :param var_names - list of variables to extract in processing order
+    :return: variables and values extracted
+    """
+
     def_vars = {
-        "time": (1, "hhmmss.ss"),
-        "status": (1, "A"),
-        "lat": (2, "llll.llll,a"),
-        "long": (2, "yyyyy.yyyy,a"),
-        "SOG": (1, "x.x"),
-        "TMG": (1, "x.x"),
-        "date": (1, "ddmmyy"),
-        "mag_var": (2, "x.x,a"),
-        "datetime": (6, "hhmmss.ss,dd,dd,yyyy,hrs,mins"),
-        "zda_time": (1, "hhmmss.ss"),
-        "zda_date": (4, "dd,mm,yyyy"),
-        "z_hrs": (1, "x"),
-        "z_mins": (1, "x"),
+        "time": (1, "hhmmss.ss"),       # time of fix
+        "status": (1, "A"),             # status of fix A = ok V = fail
+        "lat": (2, "llll.llll,a"),      # lat float N positive
+        "long": (2, "yyyyy.yyyy,a"),    # long float E positive
+        "SOG": (1, "x.x"),              # Speed Over Ground  float knots
+        "TMG": (1, "x.x"),              # Track Made Good
+        "date": (1, "ddmmyy"),          # Date of fix may not be valid with some GPS
+        "mag_var": (2, "x.x,a"),        # Mag Var E positive
+        "datetime": (6, "hhmmss.ss,dd,dd,yyyy,tz_h,tz_m"),  # Datetime from ZDA if available
+        "XTE": (2, "x.x,R"),             # Cross Track Error R is positive
+        "XTE_units": (1, "A"),           # Units for XTE - N = Nm
+        "ACir": (1, "A"),                # In arrival circle  V = not arrived A= True
+        "APer": (1, "A"),                # Passing wpt perpendicular  V = not arrived A= True
+        "BOD": (2, "x.x,T"),             # Bearing to Destination T = true M = Mag
+        "Did": (1, "s"),                 # Destination id
+        "HTS": (2, "x.x,T"),              # Heading to Steer  T = true M = Mag
     }
+    sentence_data = {}
+    fields = sentence[7:].split(",")
+    for var_name in var_names:
+        field_values = []             # more than one Nmea data field may be used to make a data variable (var_name)
+        x = def_vars[var_name][0]
+        while x > 0 and fields:
+            field_values.append(fields.pop(0))
+            x -= 1
+        value = get_nmea_field_value(field_values, def_vars[var_name])
+        if value:
+            sentence_data[var_name] = value
+
+    return sentence_data
+
+
+def nmea_decoder(sentence: str, data: dict):
+    """
+    Decodes a received NMEA 0183 sentence into variables and adds them to current data store
+    :param sentence:
+    :param data:
+    :return:
+    """
 
     sentences = {
         "RMC": ["time", "status", "lat", "long", "SOG", "TMG", "date", "mag_var"],
         "ZDA": ["datetime"],
-        "APB": []  # ,A,A,0,L,N,V,V,359.6,T,1,359.1,T,,T,A*79
+        "APB": ["status", "", "XTE", "XTE_units", "ACir", "APer", "BOD", "Did", "HTS"],
 
     }
     code = ""
@@ -170,16 +204,11 @@ def nmea_decoder(sentence: str, data: dict):
         if len(sentence) > 9:
             code = sentence[3:6]
             if code in sentences:
-                fields = sentence[7:].split(",")
-                for var_name in sentences[code]:
-                    value_fields = []
-                    x = def_vars[var_name][0]
-                    while x > 0 and fields:
-                        value_fields.append(fields.pop(0))
-                        x -= 1
-                    value = get_nmea_field_value(var_name, value_fields, def_vars[var_name])
-                    if value:
-                        data[var_name] = value
+                sentence_data = get_sentence_data(sentence, sentences[code])
+                if sentence_data.get('status', 'A') == 'A':
+                    for n, v in sentence_data.items():
+                        data[n] = v
+
     except (AttributeError, ValueError, ) as err:
         print(f"NMEA {code} sentence translation error: {err} when processing {sentence}")
 
