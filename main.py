@@ -42,17 +42,14 @@ async def log(boat_data: dict, q: asyncio.Queue):
 
 async def autohelm(boat_data: dict, q: asyncio.Queue):
     b = BoatModel()
-    items = {}
-    c = 0
-    cts = 0
     last_heading = None
     while True:
         await asyncio.sleep(.2)
         heading = b.read_compass()  # heading is *10 deci-degrees
+        print(heading)
         if last_heading is None:
             last_heading = heading
-        items[c] = heading
-        hts = int((boat_data.get('hts') + boat_data.get('mag_var'))*10)
+        hts = int((boat_data.get('hts', 0) + boat_data.get('mag_var', 0))*10)
 
         # desired turn rate is compass error  / no of secs
         error = relative_direction(heading - hts)
@@ -91,6 +88,7 @@ def get_micro_secs(real_str: str) -> int:
         return int(p2)
     return 0
 
+
 def to_true(amount: float, flag: str, mag_var: float) -> float:
     """
     Returns True bearing or Course
@@ -106,7 +104,8 @@ def to_true(amount: float, flag: str, mag_var: float) -> float:
 
 
 def get_nmea_field_value(value_fields: list, format_def: tuple, mag_var: float) -> object:
-    """ Returns a single value (str, int, float) based on a key which selects how the fields are processed.
+    """
+    Returns a single value (str, int, float) based on a key which selects how the fields are processed.
     Given a extracted portion of a NME0183 sentence (each comma separated field sent in a list)
     we convert the strings there into a single value and return it. Some conversions require a single
     field whilst datetime, lat and long etc require many.
