@@ -128,6 +128,7 @@ def get_nmea_field_value(value_fields, format_def):
         "x.x,R": lambda value_list: float(value_list[0]) * sign_nmea(value_list[1], {'R': 1, 'L': -1}),
         "s": lambda value_list: value_list[0],
         "x.x,T": lambda value_list: value_list[0],   # To do convert to true  if 2nd field is magnetic ie M
+        "x.x,+x.x": lambda value_list: float(value_list[0]) + float(value_list[0])
 
     }
     func = func_map.get(format_def[1])
@@ -162,13 +163,12 @@ def get_sentence_data(sentence: str, var_names: list) -> dict:
         "date": (1, "ddmmyy"),          # Date of fix may not be valid with some GPS
         "mag_var": (2, "x.x,a"),        # Mag Var E positive
         "datetime": (6, "hhmmss.ss,dd,dd,yyyy,tz_h,tz_m"),  # Datetime from ZDA if available
-        "XTE": (2, "x.x,R"),             # Cross Track Error R is positive
-        "XTE_units": (1, "A"),           # Units for XTE - N = Nm
-        "ACir": (1, "A"),                # In arrival circle  V = not arrived A= True
-        "APer": (1, "A"),                # Passing wpt perpendicular  V = not arrived A= True
-        "BOD": (2, "x.x,T"),             # Bearing to Destination T = true M = Mag
-        "Did": (1, "s"),                 # Destination id
-        "HTS": (2, "x.x,T"),              # Heading to Steer  T = true M = Mag
+        "XTE": (2, "x.x,R"),            # Cross Track Error R is positive
+        "XTE_units": (1, "A"),          # Units for XTE - N = NmH
+        "HDM": (1, "x.x"),              # Heading Magnetic
+        "Depth": (2, "x.x,+x.x"),       # Depth below keel or waterline depending on value set
+        "STW": (1, "x.x"),              # Speed Through Water float knots
+        "DW": (1, "x.x"),               # Water distance since reset float knots
     }
     sentence_data = {}
     fields = sentence[7:].split(",")
@@ -181,24 +181,28 @@ def get_sentence_data(sentence: str, var_names: list) -> dict:
         value = get_nmea_field_value(field_values, def_vars[var_name])
         if value:
             sentence_data[var_name] = value
-
     return sentence_data
 
 
 def nmea_decoder(sentence: str, data: dict):
     """
     Decodes a received NMEA 0183 sentence into variables and adds them to current data store
-    :param sentence:
-    :param data:
-    :return:
+    :param sentence: received  NMEA sentence
+    :param data: variables extracted
+
     """
 
     sentences = {
         "RMC": ["time", "status", "lat", "long", "SOG", "TMG", "date", "mag_var"],
         "ZDA": ["datetime"],
         "APB": ["status", "", "XTE", "XTE_units", "ACir", "APer", "BOD", "Did", "HTS"],
-
+        "HDG": ["", "", "", "mag_var"],
+        "HDM": ["HDM"],  # 136.8, M * 25
+        "DPT": ["Depth"],  # 2.8, -0.7
+        "VHW": ["", "", "", "", "STW"],  # T,, M, 0.0, N, 0.0, K
+        "VLW": ["", "", "WD"],  # 23.2, N, 0.0, N
     }
+
     code = ""
     try:
         if len(sentence) > 9:
