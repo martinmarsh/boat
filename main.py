@@ -31,7 +31,7 @@ def relative_direction(diff):
 async def log(boat_data: dict, q: asyncio.Queue, ip, port):
     stream = None
     while True:
-        await asyncio.sleep(10)
+        await asyncio.sleep(5)
         line = "".join([json.dumps(boat_data), ",\n"])
         async with AIOFile("./logs/log.txt", 'a+') as afp:
             await afp.write(line)
@@ -42,7 +42,7 @@ async def log(boat_data: dict, q: asyncio.Queue, ip, port):
             if stream:
                 await stream.send(line.encode(errors='ignore'))
         except ConnectionError as err:
-            print(f"Failed to connect to OpenCPN error: {err}")
+            print(f"Failed to connect to data processor error: {err}")
             stream = None
 
 
