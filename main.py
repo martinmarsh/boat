@@ -28,16 +28,22 @@ def relative_direction(diff):
     return diff
 
 
-async def log(boat_data: dict, q: asyncio.Queue):
+async def log(boat_data: dict, q: asyncio.Queue, ip, port):
+    stream = None
     while True:
         await asyncio.sleep(10)
+        line = "".join([json.dumps(boat_data), ",\n"])
         async with AIOFile("./logs/log.txt", 'a+') as afp:
-            line = "".join([json.dumps(boat_data), ",\n"])
-            print(line)
             await afp.write(line)
             await afp.fsync()
-
-        print(boat_data)
+        try:
+            if not stream:
+                stream = await asyncio_dgram.connect((ip, port))
+            if stream:
+                await stream.send(line.encode(errors='ignore'))
+        except ConnectionError as err:
+            print(f"Failed to connect to OpenCPN error: {err}")
+            stream = None
 
 
 async def autohelm(boat_data: dict, q: asyncio.Queue):
@@ -46,7 +52,7 @@ async def autohelm(boat_data: dict, q: asyncio.Queue):
     while True:
         await asyncio.sleep(.2)
         heading = b.read_compass()  # heading is *10 deci-degrees
-        print(heading)
+
         if last_heading is None:
             last_heading = heading
         hts = int((boat_data.get('hts', 0) + boat_data.get('mag_var', 0))*10)
@@ -57,10 +63,10 @@ async def autohelm(boat_data: dict, q: asyncio.Queue):
 
         # Desired turn rate is 10 degrees per second ie  2 per .2s or 20 deci-degrees
         desired_rate = error / 20
-        gain = 50
-        correction = (turn_rate + desired_rate) * gain
+        gain = 80000
+        correction = (desired_rate - turn_rate) * gain
         print(f'heading {heading/10}  hts {hts / 10} turn rate {turn_rate} '
-              f'error {error}  desired {desired_rate} correction {correction}')
+              f'error {error}  desired {desired_rate} correction {correction/1000000}')
         b.helm(correction)
         last_heading = heading
 
@@ -103,6 +109,17 @@ def to_true(amount: float, flag: str, mag_var: float) -> float:
     return value
 
 
+def gps_date(day, month, year):
+    yr = int(year)
+    if yr < 1980:
+        yr += 2000
+    d = arrow.get(day=int(day), month=int(month), year=yr)
+    if yr < 2020:
+        # correct for last roll over assuming GPS was corrected for up to 2019
+        d = d.shift(weeks=1024)
+    return d.date().isoformat()
+
+
 def get_nmea_field_value(value_fields: list, format_def: tuple, mag_var: float) -> object:
     """
     Returns a single value (str, int, float) based on a key which selects how the fields are processed.
@@ -126,8 +143,7 @@ def get_nmea_field_value(value_fields: list, format_def: tuple, mag_var: float) 
         "llll.llll,a": lambda value_list: ((float(value_list[0][0:2]) + float(value_list[0][2:])/60.0)
                                            * sign_nmea(value_list[1], {'N': 1, 'S': -1})),
         "x.x": lambda value_list: float(value_list[0]),
-        "ddmmyy": lambda value_list: datetime.date(
-            day=int(value_list[0][0:2]), month=int(value_list[0][2:4]), year=int(value_list[0][4:])+2000).isoformat(),
+        "ddmmyy": lambda value_list:  gps_date(value_list[0][0:2], value_list[0][2:4], value_list[0][4:]),
         "A": lambda value_list: value_list[0],
         "x.x,a": lambda value_list: float(value_list[0]) * sign_nmea(value_list[1], {'E': 1, 'W': -1}),
         "x": lambda value_list: int(value_list[0]),
@@ -328,7 +344,7 @@ async def main(consumers):
     q_udp = asyncio.Queue()
     producers = [
         asyncio.create_task(autohelm(boat_data, q_other)),
-        asyncio.create_task(log(boat_data, q_other)),
+        asyncio.create_task(log(boat_data, q_other, "192.168.1.88", 8012)),
         asyncio.create_task(process_udp_queue(q_udp, "192.168.1.88", 8011)),
     ]   # producers write to queues to pass and multiplex nmea sentences to consumers
 

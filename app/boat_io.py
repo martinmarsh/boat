@@ -120,6 +120,7 @@ class BoatModel:
 
         self.applied_helm_power = duty * self.helm_direction
         # 5khz rate - pulse width is fraction of 1M
+        print(duty)
         self._pi.hardware_PWM(18, 5000, duty)
 
     def config_save(self):
