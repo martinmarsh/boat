@@ -28,10 +28,22 @@ def relative_direction(diff):
     return diff
 
 
+def del_items(adict, delete_list):
+    for item in delete_list:
+        if adict.get(item):
+            del(adict[item])
+
+
 async def log(boat_data: dict, q: asyncio.Queue, ip, port):
     stream = None
     while True:
+        boat_data["max_heal"] = -90
+        boat_data["min_heal"] = 90
+        boat_data["max_pitch"] = -90
+        boat_data["min_pitch"] = 90
+        del_items(boat_data, ["DBT", "TOFF", "STW"])
         await asyncio.sleep(5)
+
         line = "".join([json.dumps(boat_data), ",\n"])
         async with AIOFile("./logs/log.txt", 'a+') as afp:
             await afp.write(line)
@@ -52,6 +64,15 @@ async def autohelm(boat_data: dict, q: asyncio.Queue):
     while True:
         await asyncio.sleep(.2)
         heading = b.read_compass()  # heading is *10 deci-degrees
+        boat_data["compass_cal"] = b.calibration
+        boat_data["compass"] = heading/10
+        heal = b.read_roll()
+        pitch = b.read_pitch()
+
+        boat_data["max_heal"] = max(boat_data["max_heal"], heal)
+        boat_data["min_heal"] = min(boat_data["min_heal"], heal)
+        boat_data["max_pitch"] = max(boat_data["max_pitch"], pitch)
+        boat_data["min_pitch"] = min(boat_data["min_pitch"], pitch)
 
         if last_heading is None:
             last_heading = heading

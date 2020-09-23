@@ -55,11 +55,11 @@ class BoatModel:
         return self._read_signed_word(0x1A, 0x1B) / 16
 
     def read_pitch(self):
-        self.pitch = self._pi.i2c_read_byte_data(self._cm, 0x04)
+        self.pitch = int.from_bytes([self._pi.i2c_read_byte_data(self._cm, 0x04)], byteorder='big', signed=True)
         return self.pitch
 
     def read_roll(self):
-        self.roll = self._pi.i2c_read_byte_data(self._cm, 0x05)
+        self.roll = int.from_bytes([self._pi.i2c_read_byte_data(self._cm, 0x05)], byteorder='big', signed=True)
         return self.roll
 
     def _read_cmps_data(self):
