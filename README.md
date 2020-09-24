@@ -4,7 +4,7 @@ Asyncio based Low level boat data processing, data logger and autohelm controlle
 
 Designed to run on a RPI model 3 with optional hardware for heading and autohelm control:
 
-CMPS12 - CMPS12 is our 4th generation tilt compensated compass by Robot-electronics
+CMPS12 - CMPS12 - 4th generation tilt compensated compass by Robot-electronics
 VNH5019 Motor Driver Carrier 12A by Pololu
 
 # Features:
