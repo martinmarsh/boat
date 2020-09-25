@@ -14,5 +14,6 @@ arrow = "*"
 aiohttp = "*"
 aiofile = "*"
 asyncio-dgram = "*"
+aioredis = "*"
 
 [requires]
