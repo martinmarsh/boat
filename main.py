@@ -4,12 +4,16 @@ import aioserial
 import pyudev
 from app.nmea_0183 import nmea_reader
 from aiofile import AIOFile
-from time import monotonic
 from app.auto_helm import auto_helm
 import json
 import asyncio_dgram
+import contextvars
+import settings
 
 import aioredis
+
+# declare context var
+queue_dict = contextvars.ContextVar('distribution queues')
 
 
 def del_items(adict, delete_list):
@@ -18,7 +22,7 @@ def del_items(adict, delete_list):
             del(adict[item])
 
 
-async def log(boat_data: dict, q: asyncio.Queue, ip, port):
+async def log(boat_data: dict, ip, port):
     stream = None
     while True:
         boat_data["max_heal"] = -90
@@ -42,19 +46,19 @@ async def log(boat_data: dict, q: asyncio.Queue, ip, port):
             stream = None
 
 
-class SentenceMux:
+class SentenceRelay:
 
-    def __init__(self, name: str,  q_items: dict) -> None:
+    def __init__(self, name: str,  q_list: list) -> None:
         """
-        SentenceMux is typically used to send NMEA sentences to different Queues
-        A dictionary of named queues is given when creating the task.
+        SentenceRelay is typically used to send NMEA sentences to different Queues
+        A list of named queues is given when creating the task.
         A call to put will send a sentence to all the queues unless it has been disabled
         using the key name.
         :param name: Name of mux
-        :param q_items: An array of Queues
+        :param q_list: A list of names which should match an item in global context queue_dict
         """
         self.name = name
-        self.q_items = q_items
+        self.q_list = q_list
         self.disabled_list = []
 
     def disable(self, named_q: str) -> None:
@@ -67,134 +71,154 @@ class SentenceMux:
         if named_q in self.disabled_list:
             self.disabled_list.remove(named_q)
 
-    async def put(self, line: bytearray) -> None:
+    async def put(self, line: bytes) -> None:
         """
         Puts the byte array to the all the enabled queues defined on instantiation
         This method an be used as a NMEA reader call back
         :param line:
 
         """
-        for q_name, q in self.q_items.items():
+        q_dist = queue_dict.get()
+        for q_name in self.q_list:
             if q_name not in self.disabled_list:
-                await q.put(line)
+                q = q_dist.get(q_name)
+                if q:
+                    await q.put(line)
 
 
-async def read_to_queue(aioserial_instance: aioserial.AioSerial, q_serial: asyncio.Queue, q_udp: asyncio.Queue):
+async def relay_serial_input(aioserial_instance: aioserial.AioSerial, relay: SentenceRelay):
     while True:
         line = await aioserial_instance.readline_async()
-        await q_serial.put(line)
-        await q_udp.put(line)
+        await relay.put(line)
 
 
-async def process_queue(q: asyncio.Queue, combined_nmea_out: aioserial.AioSerial):
+async def write_queue_to_serial(read_queue: str, combined_nmea_out: aioserial.AioSerial):
+    q_dist = queue_dict.get()
     while True:
-        line: bytes = await q.get()
-        q.task_done()
-        s = monotonic()
-        number_of_byte: int = await combined_nmea_out.write_async(line)
-        # print(monotonic()-s)
-        line_str = line.decode(errors='ignore')
-        # if line_str[:6] == "$GPGGA": print("**** found it ****")
-        # print(line_str, end='', flush=True)
-        # print(monotonic() - s)
+        line: bytes = await q_dist[read_queue].get()
+        q_dist[read_queue].task_done()
+        await combined_nmea_out.write_async(line)
 
 
-async def process_udp_queue(q: asyncio.Queue, ip: str, port: int, mux_list: list = None):
+async def process_udp_queue(read_queue: str, ip: str, port: int, relays_writing_udp: list = None, relays: dict = None):
     """
     Processes a queue sending each line to a UDP sever such as OpenCPN
     set up with ip address 0.0.0.0 and same port. This is fully async
-    a non async udp would work with just:
-    sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)  # UDP
-    sock.sendto(line, (ip, port))
-    :param q:
+    To stop the queue being written to when there is no udp consumer  a list of sentence
+    muxs which input into this queue is given
+
+    :param read_queue: Name of Queue must be defined in queue_dict context
     :param ip:  Ip of UDP server which receives the message
     :param port: Port used at both ends gg 8011
-    :param mux_list: List of SentenceMux objects which contain "to_udp" Queue
+    :param relays_writing_udp: List of SentenceRelay names which contain read_queue eg "to_udp" Queue
     """
+    q_dist = queue_dict.get()
     while True:
-        if mux_list:
-            for mux in mux_list:
-                mux.enable("to_udp")
+        if relays_writing_udp:
+            for mux in relays_writing_udp:
+                relays[mux].enable(read_queue)
         try:
             stream = await asyncio_dgram.connect((ip, port))
             while True:
-                line: bytes = await q.get()
-                q.task_done()
+                line: bytes = await q_dist[read_queue].get()
+                q_dist[read_queue].task_done()
                 await stream.send(line)
         except ConnectionError as err:
             print(f"Failed to connect to OpenCPN error: {err}")
-            if mux_list:
-                for mux in mux_list:
-                    mux.disable("to_udp")
+            if relays_writing_udp:
+                for mux in relays_writing_udp:
+                    relays[mux].disable(read_queue)
 
             await asyncio.sleep(20)
 
 
 def open_serial(attached_devs, port_name, device_name, baud, serial_devices):
     if attached_devs.get(port_name):
-        print(f"Found {device_name} at {port_name} = {attached_devs[port_name]}")
+        print(f"Opened {device_name} at {port_name} = {attached_devs[port_name]}")
         serial_device = aioserial.AioSerial(port=attached_devs[port_name], baudrate=baud)
         serial_devices[device_name] = serial_device
 
 
-def get_usb_devices():
+def find_usb_devices(device_def: dict) -> dict:
     attached_devs = {}
     context = pyudev.Context()
     for device in context.list_devices(subsystem='tty'):
         dev_name = device.properties['DEVNAME']
         if 'USB' in dev_name:
-            if device.properties['ID_VENDOR'] == 'FTDI':
-                num = device.properties.get('ID_USB_INTERFACE_NUM', '00')
-                attached_devs['ftdi_multi_' + num] = dev_name
-            elif device.properties['ID_VENDOR'] == 'Prolific_Technology_Inc.':
-                attached_devs['prolific_usb_serial'] = dev_name
-            elif device.properties['ID_VENDOR'] == 'Silicon_Labs' and device.properties['ID_MODEL_ID'] == 'ea60':
-                attached_devs['gps_dongle'] = dev_name
+            print(f"Detected {dev_name}")
+            assigned = False
+            for name, props in device_def.items():
+                found = True
+                for prop_name, prop_value in props.items():
+                    if device.properties.get(prop_name) != prop_value:
+                        found = False
+                        break
+                if found:
+                    attached_devs[name] = dev_name
+                    print(f"Found {name} matches {dev_name}")
+                    assigned = True
+                    break
+            if not assigned:
+                print(f"Not Configured {dev_name} properties:")
+                for dn, dp in device.properties.items():
+                    print(f"    {dn}: {dp}")
     return attached_devs
 
 
 async def main(consumers):
-    attached_devs = get_usb_devices()  # attached usb devices by interface name eg
+    # attached_devs = get_usb_devices()  # attached usb devices by interface name eg
+    attached_devs = find_usb_devices(settings.usb_serial_devices)  # attached usb devices by interface name eg
     # multi port fdi device port 0 has an interface name "ftdi_multi_00"
     boat_data = {}  # data obtained from NMEA reader
-    serial_devices = {}  # opened async serial devices by device name eg compass
-    q_to_2000 = asyncio.Queue()   # All from NMEA0183 Network so don't send back sentences from NMEA 2000
-    q_from_2000 = asyncio.Queue()  # All sentences from NMEA2000 Network translated to NMEA0183 by Actisense Gateway
-    q_udp = asyncio.Queue()   # Everything we need to send via UDP - typically OpenCPN might read this
-    from_2000_mux = SentenceMux("from_200", {"from_2000": q_from_2000, "to_udp": q_udp})
-    to_2000_mux = SentenceMux("to_2000", {"to_2000": q_to_2000, "to_udp": q_udp})
+    serial_devices = {}  # opened async serial devices by device name eg compas
+    q_dist = {}
+    for q_name in settings.distribution_queues:
+        q_dist[q_name] = asyncio.Queue()
+    queue_dict.set(q_dist)
+    relay_objs = {}
+    for r_name, relay_q_list in settings.relays.items():
+        relay_objs[r_name] = SentenceRelay(r_name, relay_q_list)
 
-    producers = [
-        asyncio.create_task(auto_helm(boat_data, q_to_2000)),
-        asyncio.create_task(log(boat_data, q_to_2000, "192.168.1.88", 8012)),
-        asyncio.create_task(process_udp_queue(q_udp, "192.168.1.88", 8011, [from_2000_mux, to_2000_mux])),
-    ]   # producers write to queues to pass and multiplex nmea sentences to consumers
+    # Configure serial ports and assign a logical name to be used for reading and writing
+    for serial_name, sp in settings.serial_ports.items():
+        open_serial(attached_devs, serial_name, sp['name'], sp['baud'], serial_devices)
 
-    open_serial(attached_devs, 'gps_dongle', 'blue_next_gps_dongle', 9600, serial_devices)
-    open_serial(attached_devs, 'ftdi_multi_00', 'compass', 4800, serial_devices)
-    open_serial(attached_devs, 'ftdi_multi_01', 'nmea_2000_bridge', 38400, serial_devices)
-    open_serial(attached_devs, 'ftdi_multi_02', 'combined_log_depth', 4800, serial_devices)
-    open_serial(attached_devs, 'ftdi_multi_03', 'ais', 38400, serial_devices)
-    open_serial(attached_devs, 'prolific_usb_serial', 'position', 4800, serial_devices)
+    tasks_to_run = []
+    for task_def in settings.tasks:
+        tn = task_def['task']
+        kwargs = task_def.get('kwargs', {})
+        if tn == "auto_helm":
+            tasks_to_run.append(asyncio.create_task(auto_helm(boat_data)))
+        elif tn == "log":
+            tasks_to_run.append(asyncio.create_task(log(boat_data, "192.168.1.88", 8012)))
+        elif tn == "udp_sender":
+            kwargs["relays"] = relay_objs
+            tasks_to_run.append(asyncio.create_task(process_udp_queue(**kwargs)))
+        elif tn == "nmea_reader":
+            serial_obj = serial_devices.get(kwargs["read_serial"])
+            if serial_obj:
+                tasks_to_run.append(asyncio.create_task(
+                    nmea_reader(serial_obj, boat_data, relay_objs[kwargs["relay_to"]].put)
+                ))
+        elif tn == "relay_serial_input":
+            serial_obj = serial_devices.get(kwargs["read_serial"])
+            if serial_obj:
+                tasks_to_run.append(asyncio.create_task(
+                    relay_serial_input(serial_obj, relay_objs[kwargs["relay_to"]])
+                ))
+        elif tn == "write_queue_to_serial":
+            serial_obj = serial_devices.get(kwargs["write_serial"])
+            if serial_obj:
+                consumers.append(
+                    asyncio.create_task(
+                        write_queue_to_serial(kwargs["read_queue"], serial_obj))
+                )
 
-    for device_name, serial_obj in serial_devices.items():
-        if device_name == 'ais':
-            producers.append(asyncio.create_task(read_to_queue(serial_obj, q_to_2000, q_udp)))
-        if device_name == 'nmea_2000_bridge':
-            producers.append(asyncio.create_task(nmea_reader(serial_obj, boat_data, from_2000_mux.put)))
-        else:
-            producers.append(asyncio.create_task(nmea_reader(serial_obj, boat_data, to_2000_mux.put)))
+    await asyncio.gather(*tasks_to_run)
 
-    if serial_devices.get('nmea_2000_bridge'):
-        consumers.append(asyncio.create_task(process_queue(q_to_2000, serial_devices['nmea_2000_bridge'])))
+    for producer in q_dist.values():
+        await producer.join()  # Implicitly awaits consumers, too
 
-    if serial_devices.get('position'):
-        consumers.append(asyncio.create_task(process_queue(q_from_2000, serial_devices['position'])))
-
-    await asyncio.gather(*producers)
-
-    await q_from_2000.join()  # Implicitly awaits consumers, too
-    await q_to_2000.join()
     cancel_consumers(consumers)
 
 
@@ -208,6 +232,6 @@ if __name__ == "__main__":
     q_readers = []  # consumers read queues to process/relay receive multiplexed nmea sentences
     try:
         asyncio.run(main(q_readers))
-    except (KeyboardInterrupt, BaseException) as e:
+    except KeyboardInterrupt as e:
         print(e)
         cancel_consumers(q_readers)

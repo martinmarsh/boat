@@ -2,7 +2,7 @@ import asyncio
 from app.boat_io import BoatModel
 
 
-async def auto_helm(boat_data: dict, q: asyncio.Queue):
+async def auto_helm(boat_data: dict):
     b = BoatModel()
     last_heading = None
     while True:

@@ -1,4 +1,3 @@
-import asyncio
 import datetime
 from typing import Callable
 
@@ -199,8 +198,6 @@ async def nmea_reader(aioserial_instance: aioserial.AioSerial, boat_data: dict, 
     :param aioserial_instance: async serial interface to read NMEA data
     :param boat_data:  Dict of values extracted
     :param call_back:  Optional call back function passing back sentence read
-    :param q_serial: Async Queue reporting NMEA sentences read
-    :param q_udp: Async Queue for sending NMEA sentences via UDP
     :return:
     """
     mag_var = 0
