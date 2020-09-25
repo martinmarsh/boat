@@ -24,12 +24,11 @@ eg Actisense NGW-1 NMEA 2000
 5) Autopilot controlled via Redis keys
 6) Write to log file every 5s - (Each line a data dict in JSON format)
 7) All sentences sent via UPD (if reader connected) ideal for sending OpenCPN on another server via WiFi
-8) Data logged to Redis for further processing or display
+8) Data optionally logged to Redis for further processing or display
 
 
 ## Status
 * Basic function with a GPS dongle tested.
 * Autohlem basic features working but testing in progress.  Sea trials to be done
-* Some configuration, modularization and plugin development required.
 * Testing in progress
-* Would need modify settings to configure requirements
+* Can now modify settings to configure requirements, serial usb ports, sentence routing and tasks

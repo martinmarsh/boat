@@ -14,6 +14,7 @@ import aioredis
 
 # declare context var
 queue_dict = contextvars.ContextVar('distribution queues')
+redis_connect = contextvars.ContextVar('redis connection')
 
 
 def del_items(adict, delete_list):
@@ -22,7 +23,7 @@ def del_items(adict, delete_list):
             del(adict[item])
 
 
-async def log(boat_data: dict, ip, port):
+async def log(boat_data: dict):
     stream = None
     while True:
         boat_data["max_heal"] = -90
@@ -36,14 +37,9 @@ async def log(boat_data: dict, ip, port):
         async with AIOFile("./logs/log.txt", 'a+') as afp:
             await afp.write(line)
             await afp.fsync()
-        try:
-            if not stream:
-                stream = await asyncio_dgram.connect((ip, port))
-            if stream:
-                await stream.send(line.encode(errors='ignore'))
-        except ConnectionError as err:
-            print(f"Failed to connect to data processor error: {err}")
-            stream = None
+
+        redis = redis_connect.get()
+        await redis.hmset_dict('current_data', boat_data)
 
 
 class SentenceRelay:
@@ -166,6 +162,14 @@ def find_usb_devices(device_def: dict) -> dict:
 
 
 async def main(consumers):
+
+    if settings.redis_host:
+        redis_conn = await aioredis.create_redis_pool(settings.redis_host)
+    else:
+        redis_conn = None
+
+    redis_connect.set(redis_conn)
+
     # attached_devs = get_usb_devices()  # attached usb devices by interface name eg
     attached_devs = find_usb_devices(settings.usb_serial_devices)  # attached usb devices by interface name eg
     # multi port fdi device port 0 has an interface name "ftdi_multi_00"
@@ -190,7 +194,7 @@ async def main(consumers):
         if tn == "auto_helm":
             tasks_to_run.append(asyncio.create_task(auto_helm(boat_data)))
         elif tn == "log":
-            tasks_to_run.append(asyncio.create_task(log(boat_data, "192.168.1.88", 8012)))
+            tasks_to_run.append(asyncio.create_task(log(boat_data)))
         elif tn == "udp_sender":
             kwargs["relays"] = relay_objs
             tasks_to_run.append(asyncio.create_task(process_udp_queue(**kwargs)))

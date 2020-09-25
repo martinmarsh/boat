@@ -1,6 +1,8 @@
 
-# Identify usb ports by their unique properties rather than for example  {'DEVNAME': '/dev/ttyUSB3'}
-# Which can vary as ports are connected and re-connected
+redis_host ='redis://localhost'   # set to done if redis is not used/required
+
+# Identify usb ports by their device unique properties rather than for example  {'DEVNAME': '/dev/ttyUSB3'} which might
+# change as ports are connected and re-connected or with each system deployment
 usb_serial_devices = {
     "ftdi_multi_00": {'ID_VENDOR': 'FTDI', 'ID_USB_INTERFACE_NUM': '00'},
     "ftdi_multi_01": {'ID_VENDOR': 'FTDI', 'ID_USB_INTERFACE_NUM': '01'},
@@ -28,7 +30,7 @@ distribution_queues = [
     "q_udp"  # Everything we need to send via UDP - typically OpenCPN might read this
 ]
 
-# a relay allows a task to write to many queues
+# a relay allows a task to write to many queues and items can be disabled when consumer disconnects
 relays = {
     "from_2000": ["q_from_2000", "q_udp"],
     "to_2000": ["q_to_2000", "q_udp"]
