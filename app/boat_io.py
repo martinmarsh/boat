@@ -1,4 +1,4 @@
-from time import sleep
+from time import sleep, monotonic
 import pigpio
 
 
@@ -10,15 +10,18 @@ class BoatModel:
         self._pi.set_mode(24, pigpio.OUTPUT)
         self._cm = self._pi.i2c_open(1, 0x60)  # compass module CMPS12
         self.calibration = None
+        self.power_on = False
         self.power = 0
         self.compass = 0
         self.compass_correction = 0
         self.helm_direction = 1
         self.helm_power = 0
         self.applied_helm_power = 0
+        self.rudder = 0
         self.roll = 0
         self.pitch = 0
         self.run = 1
+        self.last_power_at = monotonic()
 
     def _port(self):
         self._pi.write(23, 0)
@@ -106,30 +109,38 @@ class BoatModel:
         full on
 
         """
-        self.helm_direction = -1 if self.helm_power < 0 else 1
-        if self.helm_direction > 0:
-            self._starboard()
+        if self.power_on:
+            self.helm_direction = -1 if self.helm_power < 0 else 1
+            if self.helm_direction > 0:
+                self._starboard()
+            else:
+                self._port()
+
+            duty = int(abs(self.helm_power))
+            if duty < 2000:
+                duty = 0
+            elif duty > 998000:
+                duty = 1000000
+
+            self.applied_helm_power = duty * self.helm_direction
         else:
-            self._port()
-
-        duty = int(abs(self.helm_power))
-        if duty < 2000:
+            self.applied_helm_power = 0
             duty = 0
-        elif duty > 998000:
-            duty = 1000000
 
-        self.applied_helm_power = duty * self.helm_direction
+        time_now = monotonic()
+        self.rudder += self.applied_helm_power * (time_now - self.last_power_at)/1000000
+        self.last_power_at = time_now
         # 5khz rate - pulse width is fraction of 1M
         # print(duty)
         self._pi.hardware_PWM(18, 5000, duty)
 
     def config_save(self):
         self._pi.i2c_write_byte_data(self._cm, 0, 0xF0)
-        sleep(.04)
+        sleep(.025)
         self._pi.i2c_write_byte_data(self._cm, 0, 0xF5)
-        sleep(.04)
+        sleep(.025)
         self._pi.i2c_write_byte_data(self._cm, 0, 0xF6)
-        sleep(.04)
+        sleep(.025)
         print("saved config")
         sleep(2.0)
 
