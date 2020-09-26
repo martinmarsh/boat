@@ -1,16 +1,17 @@
 #!/usr/bin/env python3.7
 import asyncio
-import aioserial
-import pyudev
-from app.nmea_0183 import nmea_reader
-from aiofile import AIOFile
-from app.auto_helm import auto_helm
-import json
-import asyncio_dgram
 import contextvars
-import settings
+import json
 
 import aioredis
+import aioserial
+import asyncio_dgram
+import pyudev
+from aiofile import AIOFile
+
+import settings
+from app.auto_helm import auto_helm
+from app.nmea_0183 import nmea_reader
 
 # declare context var
 queue_dict = contextvars.ContextVar('distribution queues')
@@ -24,7 +25,7 @@ def del_items(adict, delete_list):
 
 
 async def log(boat_data: dict):
-    stream = None
+
     while True:
         boat_data["max_heal"] = -90
         boat_data["min_heal"] = 90
@@ -107,6 +108,7 @@ async def process_udp_queue(read_queue: str, ip: str, port: int, relays_writing_
     :param ip:  Ip of UDP server which receives the message
     :param port: Port used at both ends gg 8011
     :param relays_writing_udp: List of SentenceRelay names which contain read_queue eg "to_udp" Queue
+    :param relays: dict of relays containing SentenceRelay objects
     """
     q_dist = queue_dict.get()
     while True:
