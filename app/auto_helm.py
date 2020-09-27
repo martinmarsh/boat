@@ -58,7 +58,7 @@ async def auto_helm(boat_data: dict):
         turn_speed_factor = 20
         turn_speed_factor_str = helm.get(b'tsf')
         if turn_speed_factor_str:
-            turn_speed_factor = min(int(turn_speed_factor_str), 1)
+            turn_speed_factor = max(int(turn_speed_factor_str), 1)
 
         # desired turn rate is compass error  / no of secs
         error = relative_direction(heading - hts)
