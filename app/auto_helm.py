@@ -58,7 +58,7 @@ async def auto_helm(boat_data: dict):
         turn_speed_factor = 20
         turn_speed_factor_str = helm.get(b'tsf')
         if turn_speed_factor_str:
-            turn_speed_factor = int(turn_speed_factor_str)
+            turn_speed_factor = min(int(turn_speed_factor_str), 1)
 
         # desired turn rate is compass error  / no of secs
         error = relative_direction(heading - hts)
@@ -75,7 +75,7 @@ async def auto_helm(boat_data: dict):
             b.power_on = 0
 
         b.helm(correction)
-        if b.power_on !=  boat_data.get("autohelm"):
+        if b.power_on != boat_data.get("autohelm"):
             boat_data["autohelm"] = b.power_on
             await redis.hset("current_data", "autohelm", boat_data["autohelm"])
         boat_data["power"] = b.applied_helm_power
