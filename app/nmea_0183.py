@@ -186,6 +186,12 @@ def nmea_decoder(sentence: str, data: dict, mag_var: float) -> None:
                 if sentence_data.get('status', 'A') == 'A':
                     for n, v in sentence_data.items():
                         data[n] = v
+                else:
+                    for n, v in sentence_data.items():
+                        if n in ['time', 'date', 'status']:
+                            data[n] = v
+                        elif data.get(n):
+                            del data[n]
 
     except (AttributeError, ValueError, ) as err:
         print(f"NMEA {code} sentence translation error: {err} when processing {sentence}")

@@ -8,6 +8,10 @@ class BoatModel:
         self._pi = pigpio.pi('localhost', 8888)
         self._pi.set_mode(23, pigpio.OUTPUT)
         self._pi.set_mode(24, pigpio.OUTPUT)
+        self._pi.set_mode(25, pigpio.OUTPUT)   # Alarm pin 1 pull down darlington
+        self._pi.set_mode(12, pigpio.OUTPUT)   # pwd Blue wire pull down darlington pin2 -> k connector
+        self._pi.set_mode(16, pigpio.OUTPUT)   # Green wire pull down darlington pin3 -> h connector
+
         self._cm = self._pi.i2c_open(1, 0x60)  # compass module CMPS12
         self.calibration = None
         self.power_on = False
