@@ -1,5 +1,5 @@
 
-redis_host ='redis://localhost'   # set to done if redis is not used/required
+redis_host = 'redis://localhost'   # set to done if redis is not used/required
 
 # Identify usb ports by their device unique properties rather than for example  {'DEVNAME': '/dev/ttyUSB3'} which might
 # change as ports are connected and re-connected or with each system deployment

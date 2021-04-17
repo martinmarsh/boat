@@ -5,10 +5,13 @@ import pigpio
 class BoatModel:
 
     def __init__(self):
+        self._alarm_pin = 25
+        self._port_pin = 24
+        self._starboard_pin = 23
         self._pi = pigpio.pi('localhost', 8888)
-        self._pi.set_mode(23, pigpio.OUTPUT)
-        self._pi.set_mode(24, pigpio.OUTPUT)
-        self._pi.set_mode(25, pigpio.OUTPUT)   # Alarm pin 1 pull down darlington
+        self._pi.set_mode(self._starboard_pin, pigpio.OUTPUT)
+        self._pi.set_mode(self._port_pin, pigpio.OUTPUT)
+        self._pi.set_mode(self._alarm_pin, pigpio.OUTPUT)   # Alarm pin 1 pull down darlington
         self._pi.set_mode(12, pigpio.OUTPUT)   # pwd Blue wire pull down darlington pin2 -> k connector
         self._pi.set_mode(16, pigpio.OUTPUT)   # Green wire pull down darlington pin3 -> h connector
 
@@ -28,18 +31,18 @@ class BoatModel:
         self.last_power_at = monotonic()
 
     def _port(self):
-        self._pi.write(23, 0)
+        self._pi.write(self._starboard_pin, 0)
         if self.run:
-            self._pi.write(24, 1)
+            self._pi.write(self._port_pin, 1)
         else:
-            self._pi.write(24, 0)
+            self._pi.write(self._port_pin, 0)
 
     def _starboard(self):
-        self._pi.write(24, 0)
+        self._pi.write(self._port_pin, 0)
         if self.run:
-            self._pi.write(23, 1)
+            self._pi.write(self._starboard_pin, 1)
         else:
-            self._pi.write(23, 0)
+            self._pi.write(self._starboard_pin, 0)
 
     def _read_signed_word(self, hi_reg, lo_reg):
         return int.from_bytes([
@@ -101,6 +104,12 @@ class BoatModel:
 
     def update(self):
         self._read_cmps_data()
+
+    def alarm_on(self):
+        self._pi.write(self._alarm_pin, 1)
+
+    def alarm_off(self):
+        self._pi.write(self._alarm_pin, 0)
 
     def helm(self, correction):
         self.helm_power = correction

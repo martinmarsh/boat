@@ -76,7 +76,11 @@ async def auto_helm(boat_data: dict):
         b.helm(correction)
         if b.power_on != boat_data.get("auto_helm"):
             boat_data["auto_helm"] = b.power_on
+            b.alarm_on()
             await redis.hset("current_data", "auto_helm", boat_data["auto_helm"])
+        else:
+            b.alarm_off()
+
         boat_data["power"] = b.applied_helm_power
         boat_data["rudder"] = int(b.rudder)
         await redis.hset("current_data", "power", boat_data["power"])
