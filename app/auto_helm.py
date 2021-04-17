@@ -10,6 +10,7 @@ async def auto_helm(boat_data: dict):
     b = BoatModel()
     b.power_on = 0
     last_heading = None
+    mode = 0
     if settings.redis_host:
         redis = await aioredis.create_redis_pool(settings.redis_host)
     else:
@@ -21,12 +22,13 @@ async def auto_helm(boat_data: dict):
         auto_mode = int(helm.get(b'auto_mode', "0"))
 
         if auto_mode:
-            if auto_mode == 2:
-                b.power_on = 1
-                b.rudder = 0
-            elif auto_mode == 1:
+            if auto_mode == 1:
                 b.power_on = 0
+            else:
+                b.power_on = 1
+            mode = auto_mode      # set when auto_mode is >0
 
+            # b.rudder = 0
             await redis.hset("helm", "auto_mode", 0)
 
         heading = b.read_compass()  # heading is *10 deci-degrees
@@ -72,10 +74,16 @@ async def auto_helm(boat_data: dict):
 
         if abs(b.rudder) > 15:
             b.power_on = 0
+            mode = 0
+            b.alarm_on()
 
-        b.helm(correction)
-        if b.power_on != boat_data.get("auto_helm"):
-            boat_data["auto_helm"] = b.power_on
+        if mode == 2:
+            b.helm(correction)
+        elif mode == 3:
+            b.helm(int(helm.get("drive", 0)) * 10000)
+
+        if mode != boat_data.get("auto_helm"):
+            boat_data["auto_helm"] = mode
             b.alarm_on()
             await redis.hset("current_data", "auto_helm", boat_data["auto_helm"])
         else:
