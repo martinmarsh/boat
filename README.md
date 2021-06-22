@@ -32,3 +32,19 @@ eg Actisense NGW-1 NMEA 2000
 * Autohlem basic features working but testing in progress.  Sea trials to be done
 * Testing in progress
 * Can now modify settings to configure requirements, serial usb ports, sentence routing and tasks
+
+
+## Example of start on rpi:
+
+sudo ip route replace default via 192.168.1.254
+sudo ip route flush cache
+
+sudo pigpiod -n 127.0.0.1
+netstat -vatn
+
+cd /home/pi/keypad_control
+pipenv run python keypad.py &
+
+cd /home/pi/boat
+pipenv run python3 main.py
+

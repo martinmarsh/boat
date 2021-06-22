@@ -146,14 +146,15 @@ def get_sentence_data(sentence: str, var_names: list, mag_var: float) -> dict:
     sentence_data = {}
     fields = sentence[7:].split(",")
     for var_name in var_names:
-        field_values = []             # more than one Nmea data field may be used to make a data variable (var_name)
-        x = def_vars[var_name][0]
-        while x > 0 and fields:
-            field_values.append(fields.pop(0))
-            x -= 1
-        value = get_nmea_field_value(field_values, def_vars[var_name], mag_var)
-        if value:
-            sentence_data[var_name] = value
+        if var_name:
+            field_values = []             # more than one Nmea data field may be used to make a data variable (var_name)
+            x = def_vars[var_name][0]
+            while x > 0 and fields:
+                field_values.append(fields.pop(0))
+                x -= 1
+            value = get_nmea_field_value(field_values, def_vars[var_name], mag_var)
+            if value:
+                sentence_data[var_name] = value
     return sentence_data
 
 

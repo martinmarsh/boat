@@ -74,7 +74,7 @@ async def auto_helm(boat_data: dict):
 
         correction = (desired_rate - turn_rate) * gain
 
-        print(f"{desired_rate } {turn_rate}")
+        # print(f"{desired_rate } {turn_rate}")
 
         if abs(b.rudder) > 10:
             if correction > 0 > b.rudder or correction < 0 < b.rudder and mode == 9:
