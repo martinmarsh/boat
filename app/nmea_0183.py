@@ -86,7 +86,7 @@ def get_nmea_field_value(value_fields: list, format_def: tuple, mag_var: float) 
             int(value_list[3]), int(value_list[2]), int(value_list[1]),
             int(value_list[0][0:2]), int(value_list[0][2:4]), int(value_list[0][4:6]),
             get_micro_secs(value_list[0]),
-            f"{int(value_list[4]):+}:{value_list[5]:0>2}"
+            f"+{int(value_list[4]):0>2}:{value_list[5]:0>2}"
         ).isoformat(),
         "x.x,R": lambda value_list: float(value_list[0]) * sign_nmea(value_list[1], {'R': 1, 'L': -1}),
         "s": lambda value_list: value_list[0],
@@ -145,6 +145,12 @@ def get_sentence_data(sentence: str, var_names: list, mag_var: float) -> dict:
     }
     sentence_data = {}
     fields = sentence[7:].split(",")
+    try:
+        fields[-1] = fields[-1].rstrip()
+        if fields[-1][-3] == "*":
+            fields[-1] = fields[-1][:-3]
+    except KeyError:
+        pass
     for var_name in var_names:
         if var_name:
             field_values = []             # more than one Nmea data field may be used to make a data variable (var_name)
