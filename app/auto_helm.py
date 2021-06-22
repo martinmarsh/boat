@@ -27,8 +27,6 @@ async def auto_helm(boat_data: dict):
             else:
                 b.power_on = 1
             mode = auto_mode      # set when auto_mode is >0
-
-            # b.rudder = 0
             await redis.hset("helm", "auto_mode", 0)
 
         heading = b.read_compass()  # heading is *10 deci-degrees
@@ -48,8 +46,12 @@ async def auto_helm(boat_data: dict):
             last_heading = heading
 
         hts_str = helm.get(b'hts')
+
         if hts_str:
-            hts = int(hts_str)
+            try:
+                hts = int(hts_str)
+            except ValueError:
+                hts = 0
         else:
             hts = int((boat_data.get('hts', 0) + boat_data.get('mag_var', 0))*10)
 
@@ -58,35 +60,41 @@ async def auto_helm(boat_data: dict):
         if gain_str:
             gain = 1 + int(gain_str)
 
-        turn_speed_factor = 20
+        turn_speed_factor = 200
         turn_speed_factor_str = helm.get(b'tsf')
         if turn_speed_factor_str:
             turn_speed_factor = 1 + int(turn_speed_factor_str)
 
-        error = relative_direction(heading - hts)
-        turn_rate = relative_direction(last_heading - heading)
+        error_correct = relative_direction(hts - heading)
+        turn_rate = relative_direction(heading - last_heading)
 
         # desired turn rate is compass error  / no of secs
         # Desired turn rate is 10 degrees per second ie  2 per .2s or 20 deci-degrees
-        desired_rate = error / turn_speed_factor
+        desired_rate = int(error_correct / turn_speed_factor)
 
         correction = (desired_rate - turn_rate) * gain
 
-        if abs(b.rudder) > 15:
-            b.power_on = 0
-            mode = 0
-            b.alarm_on()
+        print(f"{desired_rate } {turn_rate}")
 
+        if abs(b.rudder) > 10:
+            if correction > 0 > b.rudder or correction < 0 < b.rudder and mode == 9:
+                b.power_on = 1
+                mode = 2
+            elif mode == 2:
+                b.power_on = 0
+                mode = 9
         if mode == 2:
             b.helm(correction)
         elif mode == 3:
-            b.helm(int(helm.get("drive", 0)) * 10000)
+            drive = int(helm.get(b'drive', 0)) * 10000
+            print(drive)
+            b.helm(drive)
 
         if mode != boat_data.get("auto_helm"):
             boat_data["auto_helm"] = mode
             b.alarm_on()
             await redis.hset("current_data", "auto_helm", boat_data["auto_helm"])
-        else:
+        elif mode != 9:
             b.alarm_off()
 
         boat_data["power"] = b.applied_helm_power
