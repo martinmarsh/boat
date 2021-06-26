@@ -48,3 +48,8 @@ pipenv run python keypad.py &
 cd /home/pi/boat
 pipenv run python3 main.py
 
+## systemd  autostart
+sudo cp /home/pi/boat/boat.service /etc/systemd/system/boat.service
+sudo systemctl daemon-reload
+sudo systemctl start boat.service
+sudo systemctl enable boat.service
