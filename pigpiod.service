@@ -1,0 +1,13 @@
+[Unit]
+Description=pigpio service
+After=network.target
+Before=boat.service
+
+[Service]
+ExecStart=/usr/local/bin/pigpiod -l -n 127.0.0.1
+Type=forking
+PIDFile=pigpio.pid
+
+
+[Install]
+WantedBy=multi-user.target
