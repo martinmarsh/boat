@@ -17,7 +17,7 @@
         </fileTransfer>
       </webServer>
       <webServer id="bac8d405-ab68-4dd8-81be-495d2ca4e9b2" name="rp-lite1 tplink wireless" url="http://192.168.0.101">
-        <fileTransfer rootFolder="/home/pi" accessType="SFTP" host="192.168.0.102" port="22" sshConfigId="6bf2686b-cb7d-4059-8d74-2ea093adb175" sshConfig="tplink wireless">
+        <fileTransfer rootFolder="/home/pi" accessType="SFTP" host="192.168.0.101" port="22" sshConfigId="6bf2686b-cb7d-4059-8d74-2ea093adb175" sshConfig="tplink wireless">
           <advancedOptions>
             <advancedOptions dataProtectionLevel="Private" passiveMode="true" shareSSLContext="true" />
           </advancedOptions>

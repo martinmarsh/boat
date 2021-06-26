@@ -3,7 +3,7 @@
   <component name="SshConfigs">
     <configs>
       <sshConfig authType="PASSWORD" connectionConfig="{&quot;serverAliveInterval&quot;:300}" host="192.168.1.70" id="e893d8ec-438d-4523-8abb-a9750802cc65" port="22" nameFormat="DESCRIPTIVE" username="pi" />
-      <sshConfig authType="PASSWORD" connectionConfig="{&quot;serverAliveInterval&quot;:300}" host="192.168.0.102" id="6bf2686b-cb7d-4059-8d74-2ea093adb175" port="22" customName="tplink wireless" nameFormat="CUSTOM" username="pi">
+      <sshConfig authType="PASSWORD" connectionConfig="{&quot;serverAliveInterval&quot;:300}" host="192.168.0.101" id="6bf2686b-cb7d-4059-8d74-2ea093adb175" port="22" customName="tplink wireless" nameFormat="CUSTOM" username="pi">
         <option name="customName" value="tplink wireless" />
       </sshConfig>
       <sshConfig authType="PASSWORD" connectionConfig="{&quot;serverAliveInterval&quot;:300}" host="192.168.0.101" id="844a9cc9-48bd-4bbe-b7db-48f23547e3f0" port="22" customName="tplink hardwired" nameFormat="CUSTOM" username="pi">
