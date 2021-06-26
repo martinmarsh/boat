@@ -40,6 +40,7 @@ sudo ip route replace default via 192.168.1.254
 sudo ip route flush cache
 
 sudo pigpiod -n 127.0.0.1
+
 netstat -vatn
 
 cd /home/pi/keypad_control

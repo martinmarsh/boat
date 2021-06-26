@@ -39,7 +39,7 @@ relays = {
 tasks = (
     {'task': "auto_helm"},
     {'task': "log"},
-    {"task": "udp_sender", "kwargs": {"read_queue": "q_udp", "ip": "192.168.1.88", "port": 8011,
+    {"task": "udp_sender", "kwargs": {"read_queue": "q_udp", "ip": "192.168.0.100", "port": 8011,
                                       "relays_writing_udp": ["from_2000", "to_2000"]}},
     {"task": "relay_serial_input", "kwargs": {"read_serial": 'ais', "relay_to": 'to_2000'}},
     {"task": "nmea_reader", "kwargs": {"read_serial": 'nmea_2000_bridge', "relay_to": 'from_2000'}},
