@@ -59,12 +59,12 @@ class SentenceRelay:
         self.disabled_list = []
 
     def disable(self, named_q: str) -> None:
-        print(f"disable {named_q} in {self.name}")
+        # print(f"disable {named_q} in {self.name}")
         if named_q in self.disabled_list:
             self.disabled_list.append(named_q)
 
     def enable(self, named_q: str) -> None:
-        print(f"enable {named_q} in {self.name}")
+        # print(f"enable {named_q} in {self.name}")
         if named_q in self.disabled_list:
             self.disabled_list.remove(named_q)
 
@@ -117,12 +117,13 @@ async def process_udp_queue(read_queue: str, ip: str, port: int, relays_writing_
                 relays[mux].enable(read_queue)
         try:
             stream = await asyncio_dgram.connect((ip, port))
+            print("Connected to OpenCPN")
             while True:
                 line: bytes = await q_dist[read_queue].get()
                 q_dist[read_queue].task_done()
                 await stream.send(line)
         except ConnectionError as err:
-            print(f"Failed to connect to OpenCPN error: {err}")
+            # print(f"Failed to connect to OpenCPN error: {err}")
             if relays_writing_udp:
                 for mux in relays_writing_udp:
                     relays[mux].disable(read_queue)

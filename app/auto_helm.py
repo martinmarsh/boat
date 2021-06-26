@@ -87,7 +87,6 @@ async def auto_helm(boat_data: dict):
             b.helm(correction)
         elif mode == 3:
             drive = int(helm.get(b'drive', 0)) * 10000
-            print(drive)
             b.helm(drive)
 
         if mode != boat_data.get("auto_helm"):
