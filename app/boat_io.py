@@ -28,6 +28,7 @@ class BoatModel:
         self.roll = 0
         self.pitch = 0
         self.run = 1
+        self.alarm_state = 0
         self.last_power_at = monotonic()
 
     def _port(self):
@@ -107,9 +108,11 @@ class BoatModel:
 
     def alarm_on(self):
         self._pi.write(self._alarm_pin, 1)
+        self.alarm_state = 1
 
     def alarm_off(self):
         self._pi.write(self._alarm_pin, 0)
+        self.alarm_state = 0
 
     def helm(self, correction):
         self.helm_power = correction

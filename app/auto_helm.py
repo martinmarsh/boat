@@ -27,6 +27,7 @@ async def auto_helm(boat_data: dict):
             else:
                 b.power_on = 1
             mode = auto_mode      # set when auto_mode is >0
+            b.rudder = 0
             await redis.hset("helm", "auto_mode", 0)
 
         heading = b.read_compass()  # heading is *10 deci-degrees
@@ -60,7 +61,7 @@ async def auto_helm(boat_data: dict):
         if gain_str:
             gain = 1 + int(gain_str)
 
-        turn_speed_factor = 200
+        turn_speed_factor = 20
         turn_speed_factor_str = helm.get(b'tsf')
         if turn_speed_factor_str:
             turn_speed_factor = 1 + int(turn_speed_factor_str)
@@ -70,19 +71,19 @@ async def auto_helm(boat_data: dict):
 
         # desired turn rate is compass error  / no of secs
         # Desired turn rate is 10 degrees per second ie  2 per .2s or 20 deci-degrees
-        desired_rate = int(error_correct / turn_speed_factor)
+        desired_rate = error_correct / turn_speed_factor
 
-        correction = (desired_rate - turn_rate) * gain
+        correction = int((desired_rate - turn_rate) * gain)
 
         # print(f"{desired_rate } {turn_rate}")
 
-        if abs(b.rudder) > 10:
-            if correction > 0 > b.rudder or correction < 0 < b.rudder and mode == 9:
-                b.power_on = 1
-                mode = 2
-            elif mode == 2:
-                b.power_on = 0
-                mode = 9
+        # if abs(b.rudder) > 10:
+        #    if correction > 0 > b.rudder or correction < 0 < b.rudder and mode == 9:
+        #        b.power_on = 1
+        #        mode = 2
+        #    elif mode == 2:
+        #        b.power_on = 0
+        #        mode = 9
         if mode == 2:
             b.helm(correction)
         elif mode == 3:
