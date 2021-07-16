@@ -55,6 +55,69 @@ def gps_date(day, month, year):
     return d.date().isoformat()
 
 
+func_map = {
+        "hhmmss.ss": lambda value_list, _: datetime.time(
+            hour=int(value_list[0][0:2]), minute=int(value_list[0][2:4]), second=int(value_list[0][4:6]),
+            microsecond=get_micro_secs(value_list[0])).isoformat("milliseconds"),
+        "yyyyy.yyyy,a": lambda value_list, _: (round(float(value_list[0][0:3]) + float(value_list[0][3:])/60.0, 8)
+                                            * sign_nmea(value_list[1], {'E': 1, 'W': -1})),
+        "llll.llll,a": lambda value_list, _: (round(float(value_list[0][0:2]) + float(value_list[0][2:])/60.0, 8)
+                                           * sign_nmea(value_list[1], {'N': 1, 'S': -1})),
+        "x.x": lambda value_list, _: float(value_list[0]),
+        "ddmmyy": lambda value_list, _:  gps_date(value_list[0][0:2], value_list[0][2:4], value_list[0][4:]),
+        "A": lambda value_list, _: value_list[0],
+        "x.x,a": lambda value_list, _: float(value_list[0]) * sign_nmea(value_list[1], {'E': 1, 'W': -1}),
+        "x": lambda value_list: int(value_list[0]),
+        "hhmmss.ss,dd,dd,yyyy,tz_h,tz_m": lambda value_list, _:  arrow.Arrow(
+            int(value_list[3]), int(value_list[2]), int(value_list[1]),
+            int(value_list[0][0:2]), int(value_list[0][2:4]), int(value_list[0][4:6]),
+            get_micro_secs(value_list[0]),
+            f"+{int(value_list[4]):0>2}:{value_list[5]:0>2}"
+        ).isoformat(),
+        "x.x,R": lambda value_list, _: float(value_list[0]) * sign_nmea(value_list[1], {'R': 1, 'L': -1}),
+        "s": lambda value_list, _: value_list[0],
+        "x.x,T": lambda value_list, mag_var: to_true(value_list[0], value_list[1], mag_var)
+
+    }
+
+def_vars = {
+    "time": (1, "hhmmss.ss"),  # time of fix
+    "status": (1, "A"),  # status of fix A = ok V = fail
+    "lat": (2, "llll.llll,a"),  # lat float N positive
+    "long": (2, "yyyyy.yyyy,a"),  # long float E positive
+    "SOG": (1, "x.x"),  # Speed Over Ground  float knots
+    "TMG": (1, "x.x"),  # Track Made Good
+    "date": (1, "ddmmyy"),  # Date of fix may not be valid with some GPS
+    "mag_var": (2, "x.x,a"),  # Mag Var E positive
+    "datetime": (6, "hhmmss.ss,dd,dd,yyyy,tz_h,tz_m"),  # Datetime from ZDA if available
+    "XTE": (2, "x.x,R"),  # Cross Track Error R is positive
+    "XTE_units": (1, "A"),  # Units for XTE - N = Nm
+    "ACir": (1, "A"),  # Arrived at way pt circle
+    "APer": (1, "A"),  # Perpendicular passing of way pt
+    "BOD": (2, "x.x,T"),  # Bearing origin to destination True
+    "Did": (1, "s"),  # Destination Waypoint ID as a str
+    "BPD": (2, "x.x,T"),  # Bearing, present position to Destination True
+    "HTS": (2, "x.x,T"),  # Heading to Steer True
+    "HDM": (1, "x.x"),  # Heading Magnetic
+    "DBT": (1, "x.x"),  # Depth below transducer
+    "TOFF": (1, "x.x"),  # Transducer offset -ve from transducer to keel +ve transducer to water line
+    "STW": (1, "x.x"),  # Speed Through Water float knots
+    "DW": (1, "x.x"),  # Water distance since reset float knots
+}
+
+
+sentences = {
+    "RMC": ["time", "status", "lat", "long", "SOG", "TMG", "date", "mag_var"],
+    "ZDA": ["datetime"],
+    "APB": ["status", "", "XTE", "XTE_units", "ACir", "APer", "BOD", "Did", "BPD", "HTS"],
+    "HDG": ["", "", "", "mag_var"],
+    "HDM": ["HDM"],  # 136.8, M * 25
+    "DPT": ["DBT", "TOFF"],  # 2.8, -0.7
+    "VHW": ["", "", "", "", "STW"],  # T,, M, 0.0, N, 0.0, K
+    "VLW": ["", "", "WD"],  # 23.2, N, 0.0, N
+}
+
+
 def get_nmea_field_value(value_fields: list, format_def: tuple, mag_var: float) -> object:
     """
     Returns a single value (str, int, float) based on a key which selects how the fields are processed.
@@ -69,30 +132,6 @@ def get_nmea_field_value(value_fields: list, format_def: tuple, mag_var: float) 
     :return: the computed value
     """
     value = None
-    func_map = {
-        "hhmmss.ss": lambda value_list: datetime.time(
-            hour=int(value_list[0][0:2]), minute=int(value_list[0][2:4]), second=int(value_list[0][4:6]),
-            microsecond=get_micro_secs(value_list[0])).isoformat(),
-        "yyyyy.yyyy,a": lambda value_list: ((float(value_list[0][0:3]) + float(value_list[0][3:])/60.0)
-                                            * sign_nmea(value_list[1], {'E': 1, 'W': -1})),
-        "llll.llll,a": lambda value_list: ((float(value_list[0][0:2]) + float(value_list[0][2:])/60.0)
-                                           * sign_nmea(value_list[1], {'N': 1, 'S': -1})),
-        "x.x": lambda value_list: float(value_list[0]),
-        "ddmmyy": lambda value_list:  gps_date(value_list[0][0:2], value_list[0][2:4], value_list[0][4:]),
-        "A": lambda value_list: value_list[0],
-        "x.x,a": lambda value_list: float(value_list[0]) * sign_nmea(value_list[1], {'E': 1, 'W': -1}),
-        "x": lambda value_list: int(value_list[0]),
-        "hhmmss.ss,dd,dd,yyyy,tz_h,tz_m": lambda value_list:  arrow.Arrow(
-            int(value_list[3]), int(value_list[2]), int(value_list[1]),
-            int(value_list[0][0:2]), int(value_list[0][2:4]), int(value_list[0][4:6]),
-            get_micro_secs(value_list[0]),
-            f"+{int(value_list[4]):0>2}:{value_list[5]:0>2}"
-        ).isoformat(),
-        "x.x,R": lambda value_list: float(value_list[0]) * sign_nmea(value_list[1], {'R': 1, 'L': -1}),
-        "s": lambda value_list: value_list[0],
-        "x.x,T": lambda value_list: to_true(value_list[0], value_list[1], mag_var)
-
-    }
     func = func_map.get(format_def[1])
     if func:
         missing = False
@@ -102,7 +141,7 @@ def get_nmea_field_value(value_fields: list, format_def: tuple, mag_var: float) 
         if missing:
             value = None
         else:
-            value = func(value_fields)
+            value = func(value_fields, mag_var)
 
     return value
 
@@ -118,31 +157,6 @@ def get_sentence_data(sentence: str, var_names: list, mag_var: float) -> dict:
     :param mag_var: Magnetic Variation for conversion true to magnetic
     :return: variables and values extracted
     """
-
-    def_vars = {
-        "time": (1, "hhmmss.ss"),       # time of fix
-        "status": (1, "A"),             # status of fix A = ok V = fail
-        "lat": (2, "llll.llll,a"),      # lat float N positive
-        "long": (2, "yyyyy.yyyy,a"),    # long float E positive
-        "SOG": (1, "x.x"),              # Speed Over Ground  float knots
-        "TMG": (1, "x.x"),              # Track Made Good
-        "date": (1, "ddmmyy"),          # Date of fix may not be valid with some GPS
-        "mag_var": (2, "x.x,a"),        # Mag Var E positive
-        "datetime": (6, "hhmmss.ss,dd,dd,yyyy,tz_h,tz_m"),  # Datetime from ZDA if available
-        "XTE": (2, "x.x,R"),            # Cross Track Error R is positive
-        "XTE_units": (1, "A"),          # Units for XTE - N = Nm
-        "ACir": (1, "A"),               # Arrived at way pt circle
-        "APer": (1, "A"),               # Perpendicular passing of way pt
-        "BOD": (2, "x.x,T"),            # Bearing origin to destination True
-        "Did": (1, "s"),                # Destination Waypoint ID as a str
-        "BPD": (2, "x.x,T"),            # Bearing, present position to Destination True
-        "HTS": (2, "x.x,T"),            # Heading to Steer True
-        "HDM": (1, "x.x"),              # Heading Magnetic
-        "DBT": (1, "x.x"),              # Depth below transducer
-        "TOFF": (1, "x.x"),             # Transducer offset -ve from transducer to keel +ve transducer to water line
-        "STW": (1, "x.x"),              # Speed Through Water float knots
-        "DW": (1, "x.x"),               # Water distance since reset float knots
-    }
     sentence_data = {}
     fields = sentence[7:].split(",")
     try:
@@ -161,6 +175,8 @@ def get_sentence_data(sentence: str, var_names: list, mag_var: float) -> dict:
             value = get_nmea_field_value(field_values, def_vars[var_name], mag_var)
             if value:
                 sentence_data[var_name] = value
+        else:
+            fields.pop(0)
     return sentence_data
 
 
@@ -172,18 +188,6 @@ def nmea_decoder(sentence: str, data: dict, mag_var: float) -> None:
     :param mag_var: Magnetic Variation for conversion true to magnetic
 
     """
-
-    sentences = {
-        "RMC": ["time", "status", "lat", "long", "SOG", "TMG", "date", "mag_var"],
-        "ZDA": ["datetime"],
-        "APB": ["status", "", "XTE", "XTE_units", "ACir", "APer", "BOD", "Did", "BPD", "HTS"],
-        "HDG": ["", "", "", "mag_var"],
-        "HDM": ["HDM"],  # 136.8, M * 25
-        "DPT": ["DBT", "TOFF"],  # 2.8, -0.7
-        "VHW": ["", "", "", "", "STW"],  # T,, M, 0.0, N, 0.0, K
-        "VLW": ["", "", "WD"],  # 23.2, N, 0.0, N
-    }
-
     code = ""
     try:
         if len(sentence) > 9:
@@ -201,7 +205,8 @@ def nmea_decoder(sentence: str, data: dict, mag_var: float) -> None:
                             del data[n]
 
     except (AttributeError, ValueError, ) as err:
-        print(f"NMEA {code} sentence translation error: {err} when processing {sentence}")
+        data['error'] = f"NMEA {code} sentence translation error: {err} when processing {sentence}"
+        print(data['error'])
 
 
 async def nmea_reader(aioserial_instance: aioserial.AioSerial, boat_data: dict, call_back: Callable = None) -> None:

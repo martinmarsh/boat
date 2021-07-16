@@ -2,17 +2,18 @@
 import asyncio
 import contextvars
 import json
+import random
 
 import aioredis
 import aioserial
 import asyncio_dgram
 import pyudev
 from aiofile import AIOFile
-
+from time import monotonic
 import settings
 from app.auto_helm import auto_helm
 from app.nmea_0183 import nmea_reader
-
+from copy import copy
 # declare context var
 queue_dict = contextvars.ContextVar('distribution queues')
 redis_connect = contextvars.ContextVar('redis connection')
@@ -25,22 +26,55 @@ def del_items(adict, delete_list):
 
 
 async def log(boat_data: dict):
+    """
+    logs all current boat data every minute (10 delays) and resets pitch and heal
+    logs every 6s (a delay) only boat data which has changed during the last 5 seconds line has a count
+    and lapse (internal time in secs since start)
+    Boat data accumulates so last reading may be very old so HDM depth etc may be very old
+    application must resolve this.  When reading the log only the delta records could be used
+    :param boat_data:
+    :return:-
+    """
+    async with AIOFile(f"./logs/latest.txt", 'a+') as afp:
+        contents = await afp.read()
+        if contents:
+            current_id = int(contents) + 1
+            afp.truncate()
+        else:
+            current_id = 1
+        await afp.write(str(current_id))
+        await afp.fsync()
 
+    down_count = 10
+    count = 0
+    start_time = monotonic()
+    lines = [json.dumps(boat_data)]
     while True:
-        boat_data["max_heal"] = -90
-        boat_data["min_heal"] = 90
-        boat_data["max_pitch"] = -90
-        boat_data["min_pitch"] = 90
-        del_items(boat_data, ["DBT", "TOFF", "STW"])
-        await asyncio.sleep(5)
+        log_data = copy(boat_data)
+        await asyncio.sleep(6)
 
-        line = "".join([json.dumps(boat_data), ",\n"])
-        async with AIOFile("./logs/log.txt", 'a+') as afp:
-            await afp.write(line)
-            await afp.fsync()
+        count += 1
+        log_it = {"count": count, "lapse": round(monotonic()-start_time, 1)}
+        for i in boat_data:
+            if boat_data[i] != log_data.get(i, None):
+                log_it[i] = boat_data[i]
+        lines.append(json.dumps(log_it))
 
-        redis = redis_connect.get()
-        await redis.hmset_dict('current_data', boat_data)
+        down_count -= 1
+        if down_count == 0:
+            async with AIOFile(f"./logs/logv2_{current_id}.txt", 'a+') as afp:
+                await afp.write(",\n".join(lines))
+                await afp.fsync()
+            lines = ["", json.dumps(boat_data)]
+            down_count = 10
+            boat_data["max_heal"] = -90
+            boat_data["min_heal"] = 90
+            boat_data["max_pitch"] = -90
+            boat_data["min_pitch"] = 90
+            del_items(boat_data, ['error'])
+        if boat_data:
+            redis = redis_connect.get()
+            await redis.hmset_dict('current_data', boat_data)
 
 
 class SentenceRelay:

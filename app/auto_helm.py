@@ -32,6 +32,13 @@ async def auto_helm(boat_data: dict):
 
         heading = b.read_compass()  # heading is *10 deci-degrees
         boat_data["compass_cal"] = b.calibration
+        # use HDM if available
+        hdm = boat_data.get('HDM', None)
+        if hdm is not None:
+            hdm10 = int(hdm * 10)
+            boat_data["head_diff"] = relative_direction(heading - hdm10)
+            heading = hdm10
+
         boat_data["compass"] = heading/10
 
         await redis.hset("current_data", "compass", boat_data["compass"])
@@ -93,14 +100,11 @@ async def auto_helm(boat_data: dict):
         if mode != boat_data.get("auto_helm"):
             boat_data["auto_helm"] = mode
             b.alarm_on()
-            await redis.hset("current_data", "auto_helm", boat_data["auto_helm"])
         elif mode != 9:
             b.alarm_off()
 
         boat_data["power"] = b.applied_helm_power
         boat_data["rudder"] = int(b.rudder)
-        await redis.hset("current_data", "power", boat_data["power"])
-        await redis.hset("current_data", "rudder", boat_data["rudder"])
         last_heading = heading
     print("No redis connection")
 
