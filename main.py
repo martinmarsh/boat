@@ -45,6 +45,11 @@ async def log(boat_data: dict):
         await afp.write(str(current_id))
         await afp.fsync()
 
+    boat_data["max_heal"] = -90
+    boat_data["min_heal"] = 90
+    boat_data["max_pitch"] = -90
+    boat_data["min_pitch"] = 90
+    del_items(boat_data, ['error'])
     down_count = 10
     count = 0
     start_time = monotonic()
@@ -211,7 +216,7 @@ async def main(consumers):
     attached_devs = find_usb_devices(settings.usb_serial_devices)  # attached usb devices by interface name eg
     # multi port fdi device port 0 has an interface name "ftdi_multi_00"
     boat_data = {}  # data obtained from NMEA reader
-    serial_devices = {}  # opened async serial devices by device name eg compas
+    serial_devices = {}  # opened async serial devices by device name eg compass
     q_dist = {}
     for q_name in settings.distribution_queues:
         q_dist[q_name] = asyncio.Queue()

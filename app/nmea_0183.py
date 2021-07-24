@@ -163,8 +163,8 @@ def get_sentence_data(sentence: str, var_names: list, mag_var: float) -> dict:
         fields[-1] = fields[-1].rstrip()
         if fields[-1][-3] == "*":
             fields[-1] = fields[-1][:-3]
-    except KeyError:
-        pass
+    except Exception:
+         pass
     for var_name in var_names:
         if var_name:
             field_values = []             # more than one Nmea data field may be used to make a data variable (var_name)

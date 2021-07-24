@@ -11,15 +11,20 @@ async def auto_helm(boat_data: dict):
     b.power_on = 0
     last_heading = None
     mode = 0
+    old_compass_mode = 0
+    old_mode = -1
     if settings.redis_host:
         redis = await aioredis.create_redis_pool(settings.redis_host)
     else:
         redis = None
 
+    await asyncio.sleep(15)
     while redis:
         await asyncio.sleep(.2)
+        b.alarm_off()
         helm = await redis.hgetall("helm")
         auto_mode = int(helm.get(b'auto_mode', "0"))
+        compass_mode = int(helm.get(b'compass_mode', "1"))
 
         if auto_mode:
             if auto_mode == 1:
@@ -34,21 +39,35 @@ async def auto_helm(boat_data: dict):
         boat_data["compass_cal"] = b.calibration
         # use HDM if available
         hdm = boat_data.get('HDM', None)
+
         if hdm is not None:
             hdm10 = int(hdm * 10)
             boat_data["head_diff"] = relative_direction(heading - hdm10)
-            heading = hdm10
+            if compass_mode == 2:
+                heading = hdm10
+        else:
+            compass_mode = 1
+
+        if compass_mode != old_compass_mode:
+            if compass_mode == 2:
+                boat_data["compass_mode"] = "ext"
+            else:
+                boat_data["compass_mode"] = "int"
+            b.alarm_on()
+            old_compass_mode = compass_mode
 
         boat_data["compass"] = heading/10
-
         await redis.hset("current_data", "compass", boat_data["compass"])
 
         heal = b.read_roll()
         pitch = b.read_pitch()
-        boat_data["max_heal"] = max(boat_data["max_heal"], heal)
-        boat_data["min_heal"] = min(boat_data["min_heal"], heal)
-        boat_data["max_pitch"] = max(boat_data["max_pitch"], pitch)
-        boat_data["min_pitch"] = min(boat_data["min_pitch"], pitch)
+        try:
+            boat_data["max_heal"] = max(boat_data["max_heal"], heal)
+            boat_data["min_heal"] = min(boat_data["min_heal"], heal)
+            boat_data["max_pitch"] = max(boat_data["max_pitch"], pitch)
+            boat_data["min_pitch"] = min(boat_data["min_pitch"], pitch)
+        except Exception:
+           pass
 
         if last_heading is None:
             last_heading = heading
@@ -63,12 +82,12 @@ async def auto_helm(boat_data: dict):
         else:
             hts = int((boat_data.get('hts', 0) + boat_data.get('mag_var', 0))*10)
 
-        gain = 80000
+        gain = 8000
         gain_str = helm.get(b'gain')
         if gain_str:
             gain = 1 + int(gain_str)
 
-        turn_speed_factor = 20
+        turn_speed_factor = 250
         turn_speed_factor_str = helm.get(b'tsf')
         if turn_speed_factor_str:
             turn_speed_factor = 1 + int(turn_speed_factor_str)
@@ -78,9 +97,8 @@ async def auto_helm(boat_data: dict):
 
         # desired turn rate is compass error  / no of secs
         # Desired turn rate is 10 degrees per second ie  2 per .2s or 20 deci-degrees
-        desired_rate = error_correct / turn_speed_factor
 
-        correction = int((desired_rate - turn_rate) * gain)
+        correction = int((error_correct - turn_rate * turn_speed_factor/100) * gain)
 
         # print(f"{desired_rate } {turn_rate}")
 
@@ -97,12 +115,18 @@ async def auto_helm(boat_data: dict):
             drive = int(helm.get(b'drive', 0)) * 10000
             b.helm(drive)
 
-        if mode != boat_data.get("auto_helm"):
-            boat_data["auto_helm"] = mode
+        if mode != old_mode:
+            if mode == 2:
+                boat_data["auto_helm"] = "auto"
+            elif mode == 3:
+                boat_data["auto_helm"] = "manual"
+            else:
+                boat_data["auto_helm"] = "stand-by"
             b.alarm_on()
-        elif mode != 9:
-            b.alarm_off()
+            old_mode = mode
 
+        boat_data["gain"] = gain
+        boat_data["tsf"] = turn_speed_factor
         boat_data["power"] = b.applied_helm_power
         boat_data["rudder"] = int(b.rudder)
         last_heading = heading
