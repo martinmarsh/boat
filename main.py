@@ -45,6 +45,11 @@ async def log(boat_data: dict):
         await afp.write(str(current_id))
         await afp.fsync()
 
+    boat_data["max_heal"] = -90
+    boat_data["min_heal"] = 90
+    boat_data["max_pitch"] = -90
+    boat_data["min_pitch"] = 90
+    del_items(boat_data, ['error'])
     down_count = 10
     count = 0
     start_time = monotonic()

@@ -16,6 +16,7 @@ async def auto_helm(boat_data: dict):
     else:
         redis = None
 
+    await asyncio.sleep(15)
     while redis:
         await asyncio.sleep(.2)
         helm = await redis.hgetall("helm")
@@ -45,10 +46,14 @@ async def auto_helm(boat_data: dict):
 
         heal = b.read_roll()
         pitch = b.read_pitch()
-        boat_data["max_heal"] = max(boat_data["max_heal"], heal)
-        boat_data["min_heal"] = min(boat_data["min_heal"], heal)
-        boat_data["max_pitch"] = max(boat_data["max_pitch"], pitch)
-        boat_data["min_pitch"] = min(boat_data["min_pitch"], pitch)
+        try:
+
+            boat_data["max_heal"] = max(boat_data["max_heal"], heal)
+            boat_data["min_heal"] = min(boat_data["min_heal"], heal)
+            boat_data["max_pitch"] = max(boat_data["max_pitch"], pitch)
+            boat_data["min_pitch"] = min(boat_data["min_pitch"], pitch)
+        except Exception:
+           pass
 
         if last_heading is None:
             last_heading = heading
@@ -63,12 +68,12 @@ async def auto_helm(boat_data: dict):
         else:
             hts = int((boat_data.get('hts', 0) + boat_data.get('mag_var', 0))*10)
 
-        gain = 80000
+        gain = 8000
         gain_str = helm.get(b'gain')
         if gain_str:
             gain = 1 + int(gain_str)
 
-        turn_speed_factor = 20
+        turn_speed_factor = 250
         turn_speed_factor_str = helm.get(b'tsf')
         if turn_speed_factor_str:
             turn_speed_factor = 1 + int(turn_speed_factor_str)
@@ -78,9 +83,8 @@ async def auto_helm(boat_data: dict):
 
         # desired turn rate is compass error  / no of secs
         # Desired turn rate is 10 degrees per second ie  2 per .2s or 20 deci-degrees
-        desired_rate = error_correct / turn_speed_factor
 
-        correction = int((desired_rate - turn_rate) * gain)
+        correction = int((error_correct - turn_rate * turn_speed_factor/100) * gain)
 
         # print(f"{desired_rate } {turn_rate}")
 
