@@ -216,7 +216,7 @@ async def main(consumers):
     attached_devs = find_usb_devices(settings.usb_serial_devices)  # attached usb devices by interface name eg
     # multi port fdi device port 0 has an interface name "ftdi_multi_00"
     boat_data = {}  # data obtained from NMEA reader
-    serial_devices = {}  # opened async serial devices by device name eg compas
+    serial_devices = {}  # opened async serial devices by device name eg compass
     q_dist = {}
     for q_name in settings.distribution_queues:
         q_dist[q_name] = asyncio.Queue()
