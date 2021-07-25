@@ -29,6 +29,7 @@ class BoatModel:
         self.pitch = 0
         self.run = 1
         self.alarm_state = 0
+        self.base_line_duty = 0
         self.last_power_at = monotonic()
 
     def _port(self):
@@ -133,9 +134,12 @@ class BoatModel:
                 self._port()
 
             duty = int(abs(self.helm_power))
-            if duty < 2000:
+            if duty < 5000:
                 duty = 0
-            elif duty > 998000:
+            else:
+                duty += self.base_line_duty
+
+            if duty > 998000:
                 duty = 1000000
 
             self.applied_helm_power = duty * self.helm_direction

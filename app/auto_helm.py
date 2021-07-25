@@ -20,7 +20,7 @@ async def auto_helm(boat_data: dict):
 
     await asyncio.sleep(15)
     while redis:
-        await asyncio.sleep(.2)
+        await asyncio.sleep(.5)
         b.alarm_off()
         helm = await redis.hgetall("helm")
         auto_mode = int(helm.get(b'auto_mode', "0"))
@@ -82,12 +82,12 @@ async def auto_helm(boat_data: dict):
         else:
             hts = int((boat_data.get('hts', 0) + boat_data.get('mag_var', 0))*10)
 
-        gain = 8000
+        gain = 4000
         gain_str = helm.get(b'gain')
         if gain_str:
             gain = 1 + int(gain_str)
 
-        turn_speed_factor = 250
+        turn_speed_factor = 500
         turn_speed_factor_str = helm.get(b'tsf')
         if turn_speed_factor_str:
             turn_speed_factor = 1 + int(turn_speed_factor_str)
@@ -95,23 +95,22 @@ async def auto_helm(boat_data: dict):
         error_correct = relative_direction(hts - heading)
         turn_rate = relative_direction(heading - last_heading)
 
-        # desired turn rate is compass error  / no of secs
-        # Desired turn rate is 10 degrees per second ie  2 per .2s or 20 deci-degrees
+        # drive is base on PID principles applied to motor drive which inherently
+        # integrates so the base_line duty is in effect an integrator, and the turn_rate
+        # dampens the response
+        # 5 degrees per sec = 25 deci-degrees per sample * 5 = 125 * gain (4000)
+        # 250,000 + base(100,000) = 600,000 by default ie 60%
+        # 5 degree error = 50 * gain(4000) = 200,000 + base(100000) = 30%
+        # so drive would be reduced if say turning at
+        # 1 degree per sec = 5 deci-degrees per sample * 5 = 25 * gain (4000) +base = 20%-30% = 10%
 
         correction = int((error_correct - turn_rate * turn_speed_factor/100) * gain)
 
-        # print(f"{desired_rate } {turn_rate}")
-
-        # if abs(b.rudder) > 10:
-        #    if correction > 0 > b.rudder or correction < 0 < b.rudder and mode == 9:
-        #        b.power_on = 1
-        #        mode = 2
-        #    elif mode == 2:
-        #        b.power_on = 0
-        #        mode = 9
         if mode == 2:
+            b.base_line_duty = int(helm.get(b'base_duty', "100000"))
             b.helm(correction)
         elif mode == 3:
+            b.base_line_duty = 0
             drive = int(helm.get(b'drive', 0)) * 10000
             b.helm(drive)
 
@@ -125,8 +124,10 @@ async def auto_helm(boat_data: dict):
             b.alarm_on()
             old_mode = mode
 
+        boat_data['hts'] = round(hts/10,1)
         boat_data["gain"] = gain
         boat_data["tsf"] = turn_speed_factor
+        boat_data["base_duty"] = b.base_line_duty
         boat_data["power"] = b.applied_helm_power
         boat_data["rudder"] = int(b.rudder)
         last_heading = heading
