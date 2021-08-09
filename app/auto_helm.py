@@ -82,12 +82,12 @@ async def auto_helm(boat_data: dict):
         else:
             hts = int((boat_data.get('hts', 0) + boat_data.get('mag_var', 0))*10)
 
-        gain = 4000
+        gain = 325
         gain_str = helm.get(b'gain')
         if gain_str:
             gain = 1 + int(gain_str)
 
-        turn_speed_factor = 500
+        turn_speed_factor = 1454
         turn_speed_factor_str = helm.get(b'tsf')
         if turn_speed_factor_str:
             turn_speed_factor = 1 + int(turn_speed_factor_str)

@@ -17,9 +17,9 @@ serial_ports = {
     'gps_dongle':  {"name": 'blue_next_gps_dongle', "baud": 9600},
     'ftdi_multi_00': {"name": 'compass', "baud": 4800},
     'ftdi_multi_01': {"name": 'nmea_2000_bridge', "baud": 38400},
-    'ftdi_multi_02': {"name": 'combined_log_depth', "baud": 4800},
+    'ftdi_multi_02': {"name": 'position', "baud": 4800},
     'ftdi_multi_03': {"name": 'ais', "baud": 38400},
-    'prolific_usb_serial': {"name": 'position', "baud": 4800},
+    # 'prolific_usb_serial': {"name": 'position', "baud": 4800},
 }
 
 # define queues - a queue is required so you can send to a task - a queue can only be consumed by one task
@@ -44,7 +44,7 @@ tasks = (
     {"task": "relay_serial_input", "kwargs": {"read_serial": 'ais', "relay_to": 'to_2000'}},
     {"task": "nmea_reader", "kwargs": {"read_serial": 'nmea_2000_bridge', "relay_to": 'from_2000'}},
     {"task": "nmea_reader", "kwargs": {"read_serial": 'compass', "relay_to": 'to_2000'}},
-    {"task": "nmea_reader", "kwargs": {"read_serial": 'combined_log_depth', "relay_to": 'to_2000'}},
+    # {"task": "nmea_reader", "kwargs": {"read_serial": 'combined_log_depth', "relay_to": 'to_2000'}},
     {"task": "nmea_reader", "kwargs": {"read_serial": 'blue_next_gps_dongle', "relay_to": 'to_2000'}},
     {"task": "write_queue_to_serial", "kwargs": {"read_queue": "q_to_2000", "write_serial": "nmea_2000_bridge"}},
     {"task": "write_queue_to_serial", "kwargs": {"read_queue": "q_from_2000", "write_serial": "position"}},
